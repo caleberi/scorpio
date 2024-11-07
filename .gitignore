@@ -1,6 +1,6 @@
-zig-out/**
 bin
 .a
 .so
 .zig-cache/**
-src/ddprof/lib
+.zig-cache/
+zig-out/
