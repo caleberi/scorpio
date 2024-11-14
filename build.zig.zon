@@ -36,12 +36,12 @@
             .hash = "1220af343d0a607e3ce6c3780fd1b9b03be5297b9ba9eb21cdb60a3bcc3c274c98b5",
         },
         .zzz = .{
-            .url = "git+https://github.com/caleberi/zzz#33fcb95ec0fc1130a8b2386be224b44e2c8950b5",
-            .hash = "122082d046b874fdb85d85b054db810d19d7e6d9e05bac8432fea15f8f316ba932f0",
+            .url = "git+https://github.com/mookums/zzz?ref=v0.2.0#b5b8b8342d2e49ced658573d6f68405d2b3d050a",
+            .hash = "1220dee083dbc52681643b00eab67e32f47ee4a28e41c4cf167bc03762617a218b65",
         },
         .tardy = .{
-            .url = "git+https://github.com/mookums/tardy#feae50e9bf60ac13f1d5d14a7d3346fcfe442fa8",
-            .hash = "122093168263d66adc14bbee5de6aa0d4a2600e7299cad2b66175feeb6ce8aaef173",
+            .url = "git+https://github.com/mookums/tardy?ref=v0.1.0#ae0970d6b3fa5b03625b14e142c664efe1fd7789",
+            .hash = "12207f5afee3b8933c1c32737e8feedc80a2e4feebe058739509094c812e4a8d2cc8",
         },
     },
     .paths = .{
