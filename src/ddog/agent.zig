@@ -5,14 +5,10 @@ const http = std.http;
 const Runtime = @import("tardy").Runtime;
 const Task = @import("tardy").Task;
 const Allocator = std.mem.Allocator;
-const GenericBatchWriter = @import("batcher.zig").GenericBatchWriter;
-
-pub const TracerBatchWriter = GenericBatchWriter(Trace);
-pub const LogBatchWriter = GenericBatchWriter(Log);
 pub const Tardy = @import("tardy").Tardy(.auto);
 const AgentLogger = @import("logger.zig");
 const AgentTracer = @import("tracer.zig");
-
+const GenericBatchWriter = @import("batcher.zig").GenericBatchWriter;
 const StatusError = @import("./common/status.zig").StatusError;
 pub const Result = std.meta.Tuple(&[_]type{ []const u8, ?StatusError });
 pub const LogOpts = struct {
@@ -149,6 +145,7 @@ pub const AggregateLogEvent = struct {
 pub const TraceOpts = struct {
     compressible: bool = false,
     batched: bool = false,
+    batcher: ?*GenericBatchWriter(Trace) = null,
     compression_type: std.compress.gzip.Options = .{ .level = .fast },
 };
 
@@ -190,9 +187,6 @@ pub const DataDogClient = struct {
     allocator: Allocator,
     http_client: ?http.Client = null,
     tracer_host: []const u8,
-    trace_batcher: *TracerBatchWriter,
-    log_batcher: *LogBatchWriter,
-    arena: std.heap.ArenaAllocator,
 
     const Self = @This();
 
@@ -200,28 +194,18 @@ pub const DataDogClient = struct {
         const buffer = try allocator.alloc(u8, 100);
         defer allocator.free(buffer);
         const site: []u8 = try std.fmt.bufPrint(buffer, "https://api.{s}", .{api_site});
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        var tracer_batcher = try TracerBatchWriter.init(arena.allocator(), "trace.batch");
-        var log_batcher = try LogBatchWriter.init(arena.allocator(), "log.batch");
-
         return .{
             .api_key = api_key,
             .host = try allocator.dupe(u8, site),
             .tracer_host = "http://localhost:8126/v0.3/traces",
             .allocator = allocator,
             .http_client = http.Client{ .allocator = allocator },
-            .arena = arena,
-            .trace_batcher = &tracer_batcher,
-            .log_batcher = &log_batcher,
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.http_client.?.deinit();
         self.allocator.free(self.host);
-        self.trace_batcher.*.deinit();
-        self.log_batcher.*.deinit();
-        self.arena.deinit();
     }
 
     // pub fn submitLog(self: *DataDogClient, log: Log, opts: LogOpts) !Result {
