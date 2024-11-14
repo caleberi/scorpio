@@ -1,27 +1,38 @@
 const zzz = @import("zzz");
 const zhttp = zzz.HTTP;
+const Server = zhttp.Server(.plain);
+const Router = Server.Router;
+const Route = Server.Route;
+const Context = Server.Context;
 const std = @import("std");
 const Agent = @import("./ddog/agent.zig");
 const Trace = Agent.Trace;
+const GenericBatchWriter = @import("./ddog/batcher.zig").GenericBatchWriter;
+pub const Dependencies = struct {
+    env: *std.process.EnvMap,
+    ddog: *Agent.DataDogClient,
+    tracer: *GenericBatchWriter(Trace),
+};
 
-pub fn bindRoutes(router: *zhttp.Router) !void {
-    try router.serve_route("/kill", zhttp.Route.init().get(kill_fn));
-    try router.serve_route("/", zhttp.Route.init().post(test_fn));
+pub fn bindRoutes(router: *Router, deps: *Dependencies) !void {
+    try router.serve_route("/kill", Route.init().get({}, kill_fn));
+    try router.serve_route("/", Route.init().post(deps, test_fn));
 }
 
-fn kill_fn(_: zhttp.Request, response: *zhttp.Response, _: zhttp.Context) void {
-    response.set(.{ .status = .Kill, .mime = zhttp.Mime.TEXT, .body = "" });
+fn kill_fn(ctx: *Context, _: void) !void {
+    ctx.runtime.stop();
+    std.process.exit(0);
 }
 
-fn test_fn(request: zhttp.Request, response: *zhttp.Response, ctx: zhttp.Context) void {
-    if (!std.mem.eql(u8, request.headers.get("content-type").?, "application/json")) {
-        return response.set(.{ .status = .@"Bad Request", .mime = zhttp.Mime.JSON, .body = null });
+fn test_fn(ctx: *Context, deps: *Dependencies) !void {
+    if (!std.mem.eql(u8, ctx.request.headers.get("content-type").?, "application/json")) {
+        return ctx.respond(.{ .status = .@"Bad Request", .mime = zhttp.Mime.JSON, .body = null });
     }
 
-    const data = ctx.allocator.dupe(u8, request.body) catch return response.set(.{ .status = .OK, .mime = zhttp.Mime.JSON, .body = "something went wrong" });
+    const data = ctx.allocator.dupe(u8, ctx.request.body) catch return ctx.response.set(.{ .status = .OK, .mime = zhttp.Mime.JSON, .body = "something went wrong" });
     defer ctx.allocator.free(data);
 
-    const parsed_trace: std.json.Parsed(Trace) = std.json.parseFromSlice(Trace, ctx.allocator, data, .{ .ignore_unknown_fields = true }) catch return response.set(.{
+    const parsed_trace: std.json.Parsed(Trace) = std.json.parseFromSlice(Trace, ctx.allocator, data, .{ .ignore_unknown_fields = true }) catch return ctx.respond(.{
         .status = .OK,
         .mime = zhttp.Mime.HTML,
         .body = "error passing json",
@@ -29,26 +40,23 @@ fn test_fn(request: zhttp.Request, response: *zhttp.Response, ctx: zhttp.Context
 
     defer parsed_trace.deinit();
     const trace = parsed_trace.value;
-    const ddog = ctx.injector.find(*Agent.DataDogClient);
-    if (ddog) |d| {
-        const result: Agent.Result = d.sendTrace(trace, .{ .batched = true, .compressible = true, .compression_type = .{ .level = .best } }) catch return response.set(.{
-            .status = .OK,
-            .mime = zhttp.Mime.HTML,
-            .body = "error passing json",
-        });
+    const ddog: *Agent.DataDogClient = deps.ddog;
+    const tracer: *GenericBatchWriter(Agent.Trace) = deps.tracer;
 
-        return response.set(.{
-            .status = .OK,
-            .mime = zhttp.Mime.JSON,
-            .body = result.@"0",
-        });
-    }
-
-    std.debug.print("{any}", .{trace});
-
-    return response.set(.{
+    const result: Agent.Result = ddog.sendTrace(trace, .{
+        .batched = true,
+        .batcher = tracer,
+        .compressible = true,
+        .compression_type = .{ .level = .best },
+    }) catch return ctx.respond(.{
         .status = .OK,
         .mime = zhttp.Mime.HTML,
-        .body = "result.@0",
+        .body = "cannot send trace",
+    });
+
+    return ctx.respond(.{
+        .status = .OK,
+        .mime = zhttp.Mime.TEXT,
+        .body = result.@"0",
     });
 }

@@ -12,15 +12,22 @@ const pprof = @cImport({
 const zzz = @import("zzz");
 const http = std.http;
 const zhttp = zzz.HTTP;
+const tardy = @import("tardy");
+const Tardy = tardy.Tardy(.auto);
+const Runtime = tardy.Runtime;
+
+const Server = zhttp.Server(.plain);
+const Router = Server.Router;
+const Context = Server.Context;
+const Route = Server.Route;
+
 const ArgsParser = @import("args");
 const Agent = @import("./ddog/agent.zig");
 const chroma_logger = @import("chroma");
 const rrouter = @import("router.zig");
-const TracerBatchWriter = Agent.TracerBatchWriter;
-const LogBatchWriter = Agent.LogBatchWriter;
 const assert = std.debug.assert;
-const Server = zhttp.Server(.plain, .busy_loop);
-
+const GenericBatchWriter = @import("./ddog/batcher.zig").GenericBatchWriter;
+const Dependencies = rrouter.Dependencies;
 const time = std.time;
 pub const std_options = .{
     .log_level = .debug,
@@ -90,7 +97,7 @@ pub fn main() !void {
     // TODO: Handle how application can be registered to log information without
     // blocking via datadog application API via streaming / http request
 
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.GeneralPurposeAllocator(.{ .thread_safe = true }){};
     const allocator = gpa.allocator();
     defer {
         if (gpa.deinit() != .ok) {
@@ -107,11 +114,6 @@ pub fn main() !void {
     const env_map = try load_environment(arena.allocator(), args.options.file.?);
     defer env_map.deinit();
 
-    const port = std.fmt.parseInt(u16, env_map.get("APP_PORT").?, 10) catch 9090;
-    const host = env_map.get("APP_HOST").?;
-    const thread_count = @max(@as(u16, @intCast(try std.Thread.getCpuCount() / 2 - 1)), 1);
-    const connection_per_thread = try std.math.divCeil(u16, 2500, thread_count);
-
     const api_key = env_map.get("DD_API_KEY").?;
     const api_site = env_map.get("DD_SITE").?;
 
@@ -120,63 +122,87 @@ pub fn main() !void {
     defer datadog_client.*.deinit();
     defer allocator.destroy(datadog_client);
 
-    var server = Server.init(.{
+    const tracer_batcher = try GenericBatchWriter(Agent.Trace).init(allocator, "trace.batch");
+    const tracer_batching_thread = try backgroundBatcher(allocator, tracer_batcher);
+
+    var t = try Tardy.init(.{
         .allocator = allocator,
         .threading = .auto,
-        .size_connections_max = connection_per_thread,
     });
+    defer t.deinit();
 
-    var router = zhttp.Router.init(
-        arena.allocator(),
-        &.{ env_map, datadog_client },
-    );
+    var router = Router.init(allocator);
     defer router.deinit();
 
-    try rrouter.bindRoutes(&router);
+    var deps = Dependencies{
+        .ddog = datadog_client,
+        .tracer = tracer_batcher,
+        .env = env_map,
+    };
+    try rrouter.bindRoutes(&router, &deps);
+
+    const EntryParams = struct {
+        config: *std.process.EnvMap,
+        router: *Router,
+    };
+
+    const thread = try std.Thread.spawn(.{}, struct {
+        fn run(td: *Tardy, _router: *Router, config: *std.process.EnvMap) !void {
+            var params = EntryParams{ .router = _router, .config = config };
+            try td.entry(
+                &params,
+                struct {
+                    fn entry(rt: *Runtime, ep: *EntryParams) !void {
+                        const thread_count = @max(@as(u16, @intCast(try std.Thread.getCpuCount() / 2 - 1)), 1);
+                        const connection_per_thread = try std.math.divCeil(u16, 2500, thread_count);
+
+                        var server = Server.init(.{
+                            .allocator = rt.allocator,
+                            .size_connections_max = connection_per_thread,
+                        });
+
+                        const port = std.fmt.parseInt(u16, ep.config.get("APP_PORT").?, 10) catch 9090;
+                        const host = ep.config.get("APP_HOST").?;
+                        try server.bind(host, @intCast(port));
+                        try server.serve(ep.router, rt);
+                    }
+                }.entry,
+                {},
+                struct {
+                    fn exit(rt: *Runtime, _: void) !void {
+                        try Server.clean(rt);
+                    }
+                }.exit,
+            );
+        }
+    }.run, .{ &t, &router, env_map });
 
     if (@import("config").@"os-tag" == .linux) {
         _ = clib.ddprof_start_profiling();
         defer clib.ddprof_stop_profiling(5000);
     }
 
-    defer server.deinit();
-
-    const signals = [_]c_int{ clib.SIGINT, clib.SIGTERM };
-    for (signals) |sig| {
-        _ = clib.sigaction(sig, &.{
-            .__sigaction_u = .{ .__sa_handler = signalHandler },
-            .sa_mask = clib.SV_NODEFER,
-            .sa_flags = 0,
-        }, null);
+    _ = clib.signal(clib.SIGINT, signalHandler);
+    scorpio_log.warn("listening for exit event", .{});
+    while (running.load(.acquire)) {}
+    {
+        tracer_batcher.shutdown();
+        tracer_batching_thread.join();
+        tracer_batcher.*.deinit();
+        // log_batching_thread.join();
     }
 
-    try server.bind(host, @intCast(port));
-    const thread = try std.Thread.spawn(.{}, struct {
-        fn run(srv: *zhttp.Server(.plain, .auto), r: *zhttp.Router) !void {
-            srv.listen(.{
-                .router = r,
-                .num_header_max = 32,
-                .num_captures_max = 0,
-                .size_request_max = 2048,
-                .size_request_uri_max = 256,
-            }) catch |err| {
-                scorpio_log.warn("Stopping server ... {any}", .{err});
-            };
-        }
-    }.run, .{ &server, &router });
-
-    while (running.load(.acquire)) {
-        std.time.sleep(std.time.ns_per_s / 10);
-    }
-
+    const port = std.fmt.parseInt(u16, env_map.get("APP_PORT").?, 10) catch 9090;
+    const host = env_map.get("APP_HOST").?;
     const terminate_endpoint_buf = try allocator.alloc(u8, 256);
     defer allocator.free(terminate_endpoint_buf);
     const terminate_endpoint = try std.fmt.bufPrintZ(terminate_endpoint_buf, "http://{s}:{d}/kill", .{ host, port });
-    monitorShutdown(arena.allocator(), terminate_endpoint, 10) catch |err| {
+    scorpio_log.warn("Stopping server...", .{});
+    monitorShutdown(arena.allocator(), terminate_endpoint) catch |err| {
         scorpio_log.err("Error checking server: {any}\n", .{err});
     };
-    std.time.sleep(std.time.ns_per_min);
     thread.join();
+    std.process.exit(0);
 }
 
 fn appLogFn(
@@ -189,22 +215,36 @@ fn appLogFn(
     return chroma_logger.timeBasedLog(level, scope, format, args);
 }
 
-pub fn monitorShutdown(allocator: std.mem.Allocator, endpoint: []const u8, interval_ms: u64) !void {
+pub fn monitorShutdown(allocator: std.mem.Allocator, endpoint: []const u8) !void {
     var client = http.Client{
         .allocator = allocator,
     };
     defer client.deinit();
     const uri = try std.Uri.parse(endpoint);
-    const header_buf = try allocator.alloc(u8, 1024);
+    const header_buf = try allocator.alloc(u8, 1024 * 8);
     defer allocator.free(header_buf);
-    // TODO: Add better memory management here
-    while (true) {
-        var req = try client.open(.GET, uri, .{ .server_header_buffer = header_buf });
-        defer req.deinit();
 
-        try req.send();
-        try req.finish();
-        try req.wait();
-        time.sleep(time.ns_per_ms * interval_ms);
-    }
+    scorpio_log.warn("Turning off...", .{});
+    var req = try client.open(.GET, uri, .{ .server_header_buffer = header_buf });
+    defer req.deinit();
+    try req.send();
+    try req.finish();
+    try req.wait();
+    scorpio_log.info("Response status: {d}\n\n", .{req.response.status});
+}
+
+pub fn backgroundBatcher(allocator: std.mem.Allocator, batcher: *GenericBatchWriter(Agent.Trace)) !*std.Thread {
+    const thread = try allocator.create(std.Thread);
+    thread.* = try std.Thread.spawn(.{}, struct {
+        fn run(b: *GenericBatchWriter(Agent.Trace)) !void {
+            if (std.meta.hasMethod(@TypeOf(b), "run")) {
+                try b.run();
+                return;
+            }
+            @panic("cannot start a batcher without run method");
+        }
+    }.run, .{
+        batcher,
+    });
+    return thread;
 }
