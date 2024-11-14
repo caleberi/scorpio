@@ -10,13 +10,11 @@ const ddog = std.log.scoped(.ddog_log);
 const Tardy = @import("tardy");
 const Runtime = Tardy.Runtime;
 const Task = Tardy.Task;
-const GenericBatchWriter = @import("./batcher.zig").GenericBatchWriter;
 const getStatusError = @import("./common/status.zig").getStatusError;
-const Batcher = GenericBatchWriter(Agent.Trace);
 
 pub fn submitTrace(self: *Agent.DataDogClient, trace: Agent.Trace, opts: Agent.TraceOpts) !Agent.Result {
     if (opts.batched) {
-        try self.trace_batcher.batch(trace);
+        try opts.batcher.?.batch(trace);
         const msg: []const u8 = "Successfully batched trace for later submission";
         return .{ msg, null };
     }

@@ -10,9 +10,7 @@ const ddog = std.log.scoped(.ddog_log);
 const Tardy = @import("tardy");
 const Runtime = Tardy.Runtime;
 const Task = Tardy.Task;
-const GenericBatchWriter = @import("./batcher.zig").GenericBatchWriter;
 const getStatusError = @import("./common/status.zig").getStatusError;
-const Batcher = GenericBatchWriter(Agent.Trace);
 
 pub fn submitLog(self: *Agent.DataDogClient, log: Agent.Log, opts: Agent.LogOpts) !Agent.Result {
     if (opts.batched) {
