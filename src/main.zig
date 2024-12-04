@@ -25,27 +25,122 @@ const ArgsParser = @import("args");
 const Agent = @import("./ddog/agent.zig");
 const chroma_logger = @import("chroma");
 const rrouter = @import("router.zig");
-const assert = std.debug.assert;
-const GenericBatchWriter = @import("./ddog/batcher.zig").GenericBatchWriter;
+const BatchWriter = @import("./ddog/batcher.zig");
 const Dependencies = rrouter.Dependencies;
+const assert = std.debug.assert;
 const time = std.time;
+const GenericBatchWriter = BatchWriter.GenericBatchWriter;
+const DDog = Agent.DataDogClient;
+const Tracer = GenericBatchWriter(Agent.Trace);
+const scorpio_log = std.log.scoped(.scorpio);
 pub const std_options = .{
     .log_level = .debug,
     .logFn = appLogFn,
 };
-const scorpio_log = std.log.scoped(.scorpio);
+var running = std.atomic.Value(bool).init(true);
 
 pub const Args = struct {
     file: ?[]const u8 = "",
     @"error-log": ?[]const u8 = "",
 
-    pub fn format(self: Args, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(
+        self: Args,
+        comptime _: []const u8,
+        _: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
         const fmt_str: []const u8 = "Args [.file = '{s}', .error-log = '{s}']";
         _ = try writer.print(fmt_str, .{ self.file orelse "", self.@"error-log" orelse "" });
     }
 };
 
-var running = std.atomic.Value(bool).init(true);
+const EntryParams = struct {
+    config: *std.process.EnvMap,
+    router: *Router,
+};
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{ .thread_safe = true }){};
+    const allocator = gpa.allocator();
+    defer {
+        if (gpa.deinit() != .ok) {
+            _ = gpa.detectLeaks();
+        }
+    }
+
+    const args = try ArgsParser.parseForCurrentProcess(
+        Args,
+        allocator,
+        .silent,
+    );
+    defer args.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const env_map = try load_environment(allocator, args.options.file.?);
+    defer env_map.deinit();
+
+    const api_key = env_map.get("DD_API_KEY").?;
+    const api_site = env_map.get("DD_SITE").?;
+
+    const ddog = try allocator.create(DDog);
+    ddog.* = try DDog.init(allocator, api_key, api_site);
+    defer ddog.*.deinit();
+    defer allocator.destroy(ddog);
+
+    const tracer = try Tracer.init(allocator, "trace.batch");
+    const tracer_thd = try backgroundBatcher(
+        tracer,
+        allocator,
+    );
+
+    var loop = try Tardy.init(.{
+        .allocator = allocator,
+        .threading = .auto,
+    });
+    defer loop.deinit();
+
+    var router = Router.init(allocator);
+    defer router.deinit();
+
+    var deps = Dependencies{
+        .ddog = ddog,
+        .tracer = tracer,
+        .env = env_map,
+    };
+    try rrouter.bindRoutes(&router, &deps);
+
+    _ = try std.Thread.spawn(.{}, struct {
+        fn run(td: *Tardy, _router: *Router, config: *std.process.EnvMap) !void {
+            var params = EntryParams{
+                .router = _router,
+                .config = config,
+            };
+            try td.entry(&params, entry, {}, exit);
+        }
+    }.run, .{ &loop, &router, env_map });
+
+    if (@import("config").@"os-tag" == .linux) {
+        _ = clib.ddprof_start_profiling();
+        defer clib.ddprof_stop_profiling(5000);
+    }
+
+    _ = clib.signal(clib.SIGINT, signalHandler);
+    while (running.load(.acquire)) {}
+
+    tracer.shutdown();
+    tracer_thd.join();
+    std.process.exit(0);
+}
+
+fn appLogFn(
+    comptime level: std.log.Level,
+    comptime scope: @Type(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    // if (scope != .scorpio) return;
+    return chroma_logger.timeBasedLog(level, scope, format, args);
+}
 
 fn signalHandler(sig: c_int) callconv(.C) void {
     _ = sig;
@@ -87,156 +182,10 @@ fn load_environment(allocator: std.mem.Allocator, filepath: []const u8) !*std.pr
     return env;
 }
 
-pub fn main() !void {
-
-    // TODO:  Understand how to use async runtime to do
-    // some work all around the application
-
-    // TODO: Add gracefully shutdown to the  application to clean up resources
-    // TODO: Handle app configuration
-    // TODO: Handle how application can be registered to log information without
-    // blocking via datadog application API via streaming / http request
-
-    var gpa = std.heap.GeneralPurposeAllocator(.{ .thread_safe = true }){};
-    const allocator = gpa.allocator();
-    defer {
-        if (gpa.deinit() != .ok) {
-            _ = gpa.detectLeaks();
-        }
-    }
-
-    const args = try ArgsParser.parseForCurrentProcess(Args, allocator, .print);
-    defer args.deinit();
-
-    scorpio_log.info("{any}", .{args.options});
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const env_map = try load_environment(arena.allocator(), args.options.file.?);
-    defer env_map.deinit();
-
-    const api_key = env_map.get("DD_API_KEY").?;
-    const api_site = env_map.get("DD_SITE").?;
-
-    const datadog_client = try allocator.create(Agent.DataDogClient);
-    datadog_client.* = try Agent.DataDogClient.init(allocator, api_key, api_site);
-    defer datadog_client.*.deinit();
-    defer allocator.destroy(datadog_client);
-
-    const tracer_batcher = try GenericBatchWriter(Agent.Trace).init(allocator, "trace.batch");
-    const tracer_batching_thread = try backgroundBatcher(allocator, tracer_batcher);
-
-    var t = try Tardy.init(.{
-        .allocator = allocator,
-        .threading = .auto,
-    });
-    defer t.deinit();
-
-    var router = Router.init(allocator);
-    defer router.deinit();
-
-    var deps = Dependencies{
-        .ddog = datadog_client,
-        .tracer = tracer_batcher,
-        .env = env_map,
-    };
-    try rrouter.bindRoutes(&router, &deps);
-
-    const EntryParams = struct {
-        config: *std.process.EnvMap,
-        router: *Router,
-    };
-
-    const thread = try std.Thread.spawn(.{}, struct {
-        fn run(td: *Tardy, _router: *Router, config: *std.process.EnvMap) !void {
-            var params = EntryParams{ .router = _router, .config = config };
-            try td.entry(
-                &params,
-                struct {
-                    fn entry(rt: *Runtime, ep: *EntryParams) !void {
-                        const thread_count = @max(@as(u16, @intCast(try std.Thread.getCpuCount() / 2 - 1)), 1);
-                        const connection_per_thread = try std.math.divCeil(u16, 2500, thread_count);
-
-                        var server = Server.init(.{
-                            .allocator = rt.allocator,
-                            .size_connections_max = connection_per_thread,
-                        });
-
-                        const port = std.fmt.parseInt(u16, ep.config.get("APP_PORT").?, 10) catch 9090;
-                        const host = ep.config.get("APP_HOST").?;
-                        try server.bind(host, @intCast(port));
-                        try server.serve(ep.router, rt);
-                    }
-                }.entry,
-                {},
-                struct {
-                    fn exit(rt: *Runtime, _: void) !void {
-                        try Server.clean(rt);
-                    }
-                }.exit,
-            );
-        }
-    }.run, .{ &t, &router, env_map });
-
-    if (@import("config").@"os-tag" == .linux) {
-        _ = clib.ddprof_start_profiling();
-        defer clib.ddprof_stop_profiling(5000);
-    }
-
-    _ = clib.signal(clib.SIGINT, signalHandler);
-    scorpio_log.warn("listening for exit event", .{});
-    while (running.load(.acquire)) {}
-    {
-        tracer_batcher.shutdown();
-        tracer_batching_thread.join();
-        tracer_batcher.*.deinit();
-        // log_batching_thread.join();
-    }
-
-    const port = std.fmt.parseInt(u16, env_map.get("APP_PORT").?, 10) catch 9090;
-    const host = env_map.get("APP_HOST").?;
-    const terminate_endpoint_buf = try allocator.alloc(u8, 256);
-    defer allocator.free(terminate_endpoint_buf);
-    const terminate_endpoint = try std.fmt.bufPrintZ(terminate_endpoint_buf, "http://{s}:{d}/kill", .{ host, port });
-    scorpio_log.warn("Stopping server...", .{});
-    monitorShutdown(arena.allocator(), terminate_endpoint) catch |err| {
-        scorpio_log.err("Error checking server: {any}\n", .{err});
-    };
-    thread.join();
-    std.process.exit(0);
-}
-
-fn appLogFn(
-    comptime level: std.log.Level,
-    comptime scope: @Type(.EnumLiteral),
-    comptime format: []const u8,
-    args: anytype,
-) void {
-    // if (scope != .scorpio) return;
-    return chroma_logger.timeBasedLog(level, scope, format, args);
-}
-
-pub fn monitorShutdown(allocator: std.mem.Allocator, endpoint: []const u8) !void {
-    var client = http.Client{
-        .allocator = allocator,
-    };
-    defer client.deinit();
-    const uri = try std.Uri.parse(endpoint);
-    const header_buf = try allocator.alloc(u8, 1024 * 8);
-    defer allocator.free(header_buf);
-
-    scorpio_log.warn("Turning off...", .{});
-    var req = try client.open(.GET, uri, .{ .server_header_buffer = header_buf });
-    defer req.deinit();
-    try req.send();
-    try req.finish();
-    try req.wait();
-    scorpio_log.info("Response status: {d}\n\n", .{req.response.status});
-}
-
-pub fn backgroundBatcher(allocator: std.mem.Allocator, batcher: *GenericBatchWriter(Agent.Trace)) !*std.Thread {
+pub fn backgroundBatcher(batch_writer: anytype, allocator: std.mem.Allocator) !*std.Thread {
     const thread = try allocator.create(std.Thread);
     thread.* = try std.Thread.spawn(.{}, struct {
-        fn run(b: *GenericBatchWriter(Agent.Trace)) !void {
+        fn run(b: anytype) !void {
             if (std.meta.hasMethod(@TypeOf(b), "run")) {
                 try b.run();
                 return;
@@ -244,7 +193,26 @@ pub fn backgroundBatcher(allocator: std.mem.Allocator, batcher: *GenericBatchWri
             @panic("cannot start a batcher without run method");
         }
     }.run, .{
-        batcher,
+        batch_writer,
     });
     return thread;
+}
+
+fn entry(rt: *Runtime, ep: *EntryParams) !void {
+    const thread_count = @max(@as(u16, @intCast(try std.Thread.getCpuCount() / 2 - 1)), 1);
+    const connection_per_thread = try std.math.divCeil(u16, 2500, thread_count);
+
+    var server = Server.init(.{
+        .allocator = rt.allocator,
+        .size_connections_max = connection_per_thread,
+    });
+
+    const port = std.fmt.parseInt(u16, ep.config.get("APP_PORT").?, 10) catch 9090;
+    const host = ep.config.get("APP_HOST").?;
+    try server.bind(host, @intCast(port));
+    try server.serve(ep.router, rt);
+}
+
+fn exit(rt: *Runtime, _: void) !void {
+    try Server.clean(rt);
 }
