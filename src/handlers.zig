@@ -56,3 +56,13 @@ pub fn TraceHandler(ctx: *Context, deps: *Dependencies) !void {
         .body = result.@"0",
     });
 }
+
+pub fn LogHandler(ctx: *Context, deps: *Dependencies) !void {
+    _ = ctx;
+    _ = deps;
+}
+
+pub fn MetricHandler(ctx: *Context, deps: *Dependencies) !void {
+    _ = ctx;
+    _ = deps;
+}
