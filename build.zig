@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) !void {
     };
 
     const target = resolve_target(b, options.target_requested) catch b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
 
     const exe = b.addExecutable(.{
         .name = "scorpio",
