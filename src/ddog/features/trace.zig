@@ -1,6 +1,6 @@
 const std = @import("std");
 const http = std.http;
-const Agent = @import("./agent.zig");
+const Agent = @import("../internals/agent.zig");
 const chroma_logger = @import("chroma");
 pub const std_options = .{
     .log_level = .debug,
@@ -10,14 +10,15 @@ const ddog = std.log.scoped(.ddog_log);
 const Tardy = @import("tardy");
 const Runtime = Tardy.Runtime;
 const Task = Tardy.Task;
-const getStatusError = @import("./common/status.zig").getStatusError;
-const GenericBatchWriter = @import("./internals/batcher.zig").GenericBatchWriter;
+const getStatusError = @import("../common/status.zig").getStatusError;
+const GenericBatchWriter = @import("../internals/batcher.zig").GenericBatchWriter;
 
 pub const TraceOpts = struct {
     compressible: bool = false,
-    batched: bool = false,
-    batcher: ?*GenericBatchWriter(Trace) = null,
-    compression_type: std.compress.gzip.Options = .{ .level = .fast },
+    logger: ?*GenericBatchWriter(Trace) = null,
+    compression_type: std.compress.gzip.Options = .{
+        .level = .fast,
+    },
 };
 
 pub const Trace = struct {
@@ -52,30 +53,24 @@ pub const Trace = struct {
     };
 };
 
-pub fn submitTrace(self: *Agent.DataDogClient, trace: Agent.Trace, opts: Agent.TraceOpts) !Agent.Result {
-    if (opts.batched) {
-        try opts.batcher.?.batch(trace);
-        const msg: []const u8 = "Successfully batched trace for later submission";
-        return .{ msg, null };
-    }
+pub fn submitTrace(self: *Agent.DdogClient, traces: []Trace, opts: TraceOpts) !Agent.Result {
     var headers = std.ArrayList(http.Header).init(self.allocator);
     defer headers.deinit();
     try headers.append(.{ .name = "Content-Type", .value = "application/json" });
     try headers.append(.{ .name = "DD-API-KEY", .value = self.api_key });
-
-    const uri = try std.fmt.allocPrint(self.allocator, "{s}/api/v2/logs", .{self.host});
-    defer self.allocator.free(uri);
-
+    const uri: []const u8 = "http://localhost:8126/v0.3/traces";
     var out = std.ArrayList(u8).init(self.allocator);
     defer out.deinit();
+    try std.json.stringify(traces, .{}, out.writer());
 
-    try std.json.stringify(trace, .{}, out.writer());
     var payload: []u8 = try out.toOwnedSlice();
-    if (opts.compressible) {
+    if (traces.len > 1) {
         try headers.append(.{ .name = "Content-Encoding", .value = "gzip" });
         var fbs = std.io.fixedBufferStream(payload);
         out.clearAndFree();
-        var cmp = try std.compress.gzip.compressor(out.writer(), .{ .level = opts.compression_type.level });
+        var cmp = try std.compress.gzip.compressor(out.writer(), .{
+            .level = opts.compression_type.level,
+        });
         try cmp.compress(fbs.reader());
         try cmp.flush();
         payload = try out.toOwnedSlice();
@@ -95,14 +90,23 @@ pub fn submitTrace(self: *Agent.DataDogClient, trace: Agent.Trace, opts: Agent.T
     try request.finish();
     try request.wait();
 
+    try opts.logger.?.log(traces);
+
     const response = request.response;
     const status: http.Status = response.status;
     if (status != .accepted) {
-        const body = request.reader().readAllAlloc(self.allocator, std.math.maxInt(i64)) catch unreachable;
+        const body = request.reader().readAllAlloc(
+            self.allocator,
+            std.math.maxInt(i64),
+        ) catch unreachable;
         ddog.err("[{any}] error={s}", .{ status, body });
         const err = getStatusError(status);
         return .{ body, err };
     }
-    const body: []const u8 = request.reader().readAllAlloc(self.allocator, std.math.maxInt(i64)) catch unreachable;
+    const body: []const u8 = request.reader().readAllAlloc(
+        self.allocator,
+        std.math.maxInt(i64),
+    ) catch unreachable;
+
     return .{ body, null };
 }
