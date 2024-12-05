@@ -137,7 +137,7 @@ fn appLogFn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    // if (scope != .scorpio) return;
+    if (scope != .scorpio) return;
     return chroma_logger.timeBasedLog(level, scope, format, args);
 }
 
