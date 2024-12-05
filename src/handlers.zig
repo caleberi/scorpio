@@ -20,7 +20,7 @@ pub fn KillHandler(ctx: *Context, _: void) !void {
     std.process.exit(0);
 }
 
-pub fn TraceHandler(ctx: *Context, deps: *Dependencies) !void {
+pub fn traceHandler(ctx: *Context, deps: *Dependencies) !void {
     if (!std.mem.eql(u8, ctx.request.headers.get("content-type").?, "application/json")) {
         return ctx.respond(.{ .status = .@"Bad Request", .mime = zhttp.Mime.JSON, .body = null });
     }
@@ -57,12 +57,12 @@ pub fn TraceHandler(ctx: *Context, deps: *Dependencies) !void {
     });
 }
 
-pub fn LogHandler(ctx: *Context, deps: *Dependencies) !void {
+pub fn logHandler(ctx: *Context, deps: *Dependencies) !void {
     _ = ctx;
     _ = deps;
 }
 
-pub fn MetricHandler(ctx: *Context, deps: *Dependencies) !void {
+pub fn metricHandler(ctx: *Context, deps: *Dependencies) !void {
     _ = ctx;
     _ = deps;
 }
