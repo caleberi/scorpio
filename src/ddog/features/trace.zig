@@ -11,6 +11,46 @@ const Tardy = @import("tardy");
 const Runtime = Tardy.Runtime;
 const Task = Tardy.Task;
 const getStatusError = @import("./common/status.zig").getStatusError;
+const GenericBatchWriter = @import("./internals/batcher.zig").GenericBatchWriter;
+
+pub const TraceOpts = struct {
+    compressible: bool = false,
+    batched: bool = false,
+    batcher: ?*GenericBatchWriter(Trace) = null,
+    compression_type: std.compress.gzip.Options = .{ .level = .fast },
+};
+
+pub const Trace = struct {
+    duration: i64 = 0,
+    @"error": u8 = 0,
+    meta: []const u8,
+    metrics: []const u8,
+    name: []const u8 = "",
+    parent_id: i64 = 0,
+    resource: []const u8 = "",
+    service: []const u8 = "",
+    span_id: u64 = 0,
+    start: i64 = 0,
+    trace_id: i64 = 0,
+    type: ?TraceType = .custom,
+
+    const TraceType = enum {
+        web,
+        db,
+        cache,
+        custom,
+
+        pub fn phrase(trace_type: TraceType) ?[]const u8 {
+            return switch (trace_type) {
+                .web => "web",
+                .db => "db",
+                .cache => "cache",
+                .custom => "custom",
+                else => null,
+            };
+        }
+    };
+};
 
 pub fn submitTrace(self: *Agent.DataDogClient, trace: Agent.Trace, opts: Agent.TraceOpts) !Agent.Result {
     if (opts.batched) {
