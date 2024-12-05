@@ -9,7 +9,7 @@ pub const std_options = .{
     .log_level = .debug,
     .logFn = chroma_logger.timeBasedLog,
 };
-const ddog = std.log.scoped(.batch_writer);
+pub const ddog = std.log.scoped(.batch_writer);
 
 pub fn GenericBatchWriter(comptime T: type) type {
     return struct {
@@ -25,7 +25,6 @@ pub fn GenericBatchWriter(comptime T: type) type {
         const Self = @This();
         const Batcher = GenericBatchWriter(T);
         const Queue = std.DoublyLinkedList(T);
-        const IDLE_TIMEOUT_NS = 5 * std.time.ns_per_s; // 5 seconds idle timeout
 
         const FileProvision = struct {
             self: *Batcher = undefined,
@@ -82,11 +81,14 @@ pub fn GenericBatchWriter(comptime T: type) type {
             if (node) |n| {
                 const data = n.data;
                 defer self.allocator.destroy(n);
-                defer self.last_write_time = std.time.nanoTimestamp();
 
                 var out = std.ArrayList(u8).init(runtime.allocator);
                 defer out.deinit();
-                try std.json.stringify(data, .{ .emit_strings_as_arrays = false, .escape_unicode = true, .emit_null_optional_fields = true }, out.writer());
+                try std.json.stringify(data, .{
+                    .emit_strings_as_arrays = false,
+                    .escape_unicode = true,
+                    .emit_null_optional_fields = true,
+                }, out.writer());
                 try out.append('\n');
 
                 const cwd = std.fs.cwd();
@@ -150,7 +152,7 @@ pub fn GenericBatchWriter(comptime T: type) type {
                 ctx,
                 check_queue_task,
                 .{
-                    .nanos = std.time.ns_per_s * 30,
+                    .nanos = std.time.ns_per_s * 5,
                 },
             );
         }
@@ -161,13 +163,14 @@ pub fn GenericBatchWriter(comptime T: type) type {
             runtime.allocator.destroy(ctx.fd);
             ddog.info("handling the next request, done with = {s}", .{ctx.buffer});
             try runtime.spawn_delay(void, ctx, monitor_task, .{
-                .nanos = std.time.ns_per_s * 30,
+                .nanos = std.time.ns_per_s * 5,
             });
             ddog.info("last batch write time = {d}", .{ctx.self.last_write_time});
         }
 
         fn write_task(runtime: *Runtime, length: i32, ctx: *FileProvision) anyerror!void {
             ddog.debug("Starting write_task", .{});
+            defer ctx.self.last_write_time = std.time.nanoTimestamp();
             if (length <= 0) {
                 try runtime.fs.close(ctx, close_task, ctx.fd.*);
                 return;
@@ -175,7 +178,6 @@ pub fn GenericBatchWriter(comptime T: type) type {
             ctx.offset += @intCast(length);
             ctx.written += @intCast(length);
 
-            // If we haven't written all the data yet, continue writing
             if (ctx.written < ctx.buffer.len) {
                 const remaining = ctx.buffer[ctx.written..];
                 try runtime.fs.write(
@@ -187,23 +189,20 @@ pub fn GenericBatchWriter(comptime T: type) type {
                 );
                 return;
             }
-
-            // All data written, close the file
             try runtime.fs.close(ctx, close_task, ctx.fd.*);
         }
 
-        pub fn batch(self: *Self, entry: T) !void {
+        pub fn log(self: *Self, entries: []T) !void {
             ddog.info("Batching new entry", .{});
-            const node = try self.allocator.create(Node);
-            node.*.data = entry;
-
             self.mutex.lock();
-            self.write_queue.append(node);
+            for (entries) |entry| {
+                const node = try self.allocator.create(Node);
+                node.*.data = entry;
+                self.write_queue.append(node);
+            }
             const current_length = self.write_queue.len;
-            ddog.info("Address of queue = {p}", .{&self.write_queue});
             self.mutex.unlock();
-
-            ddog.info("Queue length after batch: {d}", .{current_length});
+            ddog.info("Queue length after enqueue: {d}", .{current_length});
         }
 
         pub fn run(self: *Self) !void {
