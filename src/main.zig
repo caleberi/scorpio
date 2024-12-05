@@ -104,9 +104,9 @@ pub fn main() !void {
     defer router.deinit();
 
     const deps = Dependencies{ .ddog = ddog, .tracer = tracer, .env = env_map };
-    try router.serve_route("/trace", Route.init().post(deps, handlers.TraceHandler));
-    try router.serve_route("/metric", Route.init().post(deps, handlers.MetricHandler));
-    try router.serve_route("/log", Route.init().post(deps, handlers.LogHandler));
+    try router.serve_route("/trace", Route.init().post(deps, handlers.traceHandler));
+    try router.serve_route("/metric", Route.init().post(deps, handlers.metricHandler));
+    try router.serve_route("/log", Route.init().post(deps, handlers.logHandler));
 
     _ = try std.Thread.spawn(.{}, struct {
         fn run(td: *Tardy, _router: *Router, config: *std.process.EnvMap) !void {
