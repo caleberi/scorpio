@@ -12,6 +12,22 @@ const Runtime = Tardy.Runtime;
 const Task = Tardy.Task;
 const getStatusError = @import("./common/status.zig").getStatusError;
 
+pub const Log = struct {
+    message: []const u8,
+    service: []const u8,
+    status: []const u8,
+    ddsource: []const u8,
+
+    ddtags: ?[]const u8 = null,
+    hostname: ?[]const u8 = null,
+};
+
+pub const LogOpts = struct {
+    compressible: bool = false,
+    batched: bool = false,
+    compression_type: std.compress.gzip.Options = .{ .level = .fast },
+};
+
 pub fn submitLog(self: *Agent.DataDogClient, log: Agent.Log, opts: Agent.LogOpts) !Agent.Result {
     if (opts.batched) {
         try self.log_batcher.batch(log);
