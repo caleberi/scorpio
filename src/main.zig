@@ -22,17 +22,15 @@ const Context = Server.Context;
 const Route = Server.Route;
 
 const ArgsParser = @import("args");
-const Agent = @import("./ddog/agent.zig");
+const Agent = @import("./ddog/internals/agent.zig");
 const chroma_logger = @import("chroma");
-const rrouter = @import("router.zig");
-const BatchWriter = @import("./ddog/batcher.zig");
+const BatchWriter = @import("./ddog/internals/batcher.zig");
 const handlers = @import("handlers.zig");
-const Dependencies = rrouter.Dependencies;
+const Features = @import("./ddog/features/index.zig");
 const assert = std.debug.assert;
 const time = std.time;
 const GenericBatchWriter = BatchWriter.GenericBatchWriter;
-const DDog = Agent.DataDogClient;
-const Tracer = GenericBatchWriter(Agent.Trace);
+const Tracer = GenericBatchWriter(Features.trace.Trace);
 const scorpio_log = std.log.scoped(.scorpio);
 pub const std_options = .{
     .log_level = .debug,
@@ -83,12 +81,12 @@ pub fn main() !void {
     const api_key = env_map.get("DD_API_KEY").?;
     const api_site = env_map.get("DD_SITE").?;
 
-    const ddog = try allocator.create(DDog);
-    ddog.* = try DDog.init(allocator, api_key, api_site);
+    const ddog = try allocator.create(Agent.DdogClient);
+    ddog.* = try Agent.DdogClient.init(allocator, api_key, api_site);
     defer ddog.*.deinit();
     defer allocator.destroy(ddog);
 
-    const tracer = try Tracer.init(allocator, "trace.batch");
+    var tracer = try Tracer.init(allocator, "trace.batch");
     const tracer_thd = try backgroundBatcher(
         tracer,
         allocator,
@@ -103,10 +101,20 @@ pub fn main() !void {
     var router = Router.init(allocator);
     defer router.deinit();
 
-    const deps = Dependencies{ .ddog = ddog, .tracer = tracer, .env = env_map };
-    try router.serve_route("/trace", Route.init().post(deps, handlers.traceHandler));
-    try router.serve_route("/metric", Route.init().post(deps, handlers.metricHandler));
-    try router.serve_route("/log", Route.init().post(deps, handlers.logHandler));
+    var deps = handlers.Dependencies{ .ddog = ddog, .tracer = tracer, .env = env_map };
+
+    try router.serve_route(
+        "/trace",
+        Route.init().post(&deps, handlers.traceHandler),
+    );
+    try router.serve_route(
+        "/metric",
+        Route.init().post(&deps, handlers.metricHandler),
+    );
+    try router.serve_route(
+        "/log",
+        Route.init().post(&deps, handlers.logHandler),
+    );
 
     _ = try std.Thread.spawn(.{}, struct {
         fn run(td: *Tardy, _router: *Router, config: *std.process.EnvMap) !void {
