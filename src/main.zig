@@ -26,6 +26,7 @@ const Agent = @import("./ddog/agent.zig");
 const chroma_logger = @import("chroma");
 const rrouter = @import("router.zig");
 const BatchWriter = @import("./ddog/batcher.zig");
+const handlers = @import("handlers.zig");
 const Dependencies = rrouter.Dependencies;
 const assert = std.debug.assert;
 const time = std.time;
@@ -102,12 +103,10 @@ pub fn main() !void {
     var router = Router.init(allocator);
     defer router.deinit();
 
-    var deps = Dependencies{
-        .ddog = ddog,
-        .tracer = tracer,
-        .env = env_map,
-    };
-    try rrouter.bindRoutes(&router, &deps);
+    const deps = Dependencies{ .ddog = ddog, .tracer = tracer, .env = env_map };
+    try router.serve_route("/trace", Route.init().post(deps, handlers.TraceHandler));
+    try router.serve_route("/metric", Route.init().post(deps, handlers.MetricHandler));
+    try router.serve_route("/log", Route.init().post(deps, handlers.LogHandler));
 
     _ = try std.Thread.spawn(.{}, struct {
         fn run(td: *Tardy, _router: *Router, config: *std.process.EnvMap) !void {
