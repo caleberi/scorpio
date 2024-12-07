@@ -53,7 +53,7 @@ pub const DdogClient = struct {
         return try @call(.auto, AgentMetricRecorder.submitMetric, .{ self, metric });
     }
 
-    pub fn sendTrace(self: *DdogClient, trace: []Trace, opts: TraceOpts) !Result {
+    pub fn sendTrace(self: *DdogClient, trace: [][]Trace, opts: TraceOpts) !Result {
         return try @call(.auto, AgentTracer.submitTrace, .{ self, trace, opts });
     }
 };
