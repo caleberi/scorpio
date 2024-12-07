@@ -24,8 +24,8 @@ pub const TraceOpts = struct {
 pub const Trace = struct {
     duration: i64 = 0,
     @"error": u8 = 0,
-    meta: []const u8,
-    metrics: []const u8,
+    meta: ?std.json.Value = null,
+    metrics: ?std.json.Value = null,
     name: []const u8 = "",
     parent_id: i64 = 0,
     resource: []const u8 = "",
@@ -53,7 +53,7 @@ pub const Trace = struct {
     };
 };
 
-pub fn submitTrace(self: *Agent.DdogClient, traces: []Trace, opts: TraceOpts) !Agent.Result {
+pub fn submitTrace(self: *Agent.DdogClient, traces: [][]Trace, opts: TraceOpts) !Agent.Result {
     var headers = std.ArrayList(http.Header).init(self.allocator);
     defer headers.deinit();
     try headers.append(.{ .name = "Content-Type", .value = "application/json" });
@@ -64,7 +64,9 @@ pub fn submitTrace(self: *Agent.DdogClient, traces: []Trace, opts: TraceOpts) !A
     try std.json.stringify(traces, .{}, out.writer());
 
     var payload: []u8 = try out.toOwnedSlice();
-    if (traces.len > 1) {
+
+    std.debug.print("(3) {s}\n", .{payload});
+    if (traces[0].len > 1) {
         try headers.append(.{ .name = "Content-Encoding", .value = "gzip" });
         var fbs = std.io.fixedBufferStream(payload);
         out.clearAndFree();
@@ -90,7 +92,7 @@ pub fn submitTrace(self: *Agent.DdogClient, traces: []Trace, opts: TraceOpts) !A
     try request.finish();
     try request.wait();
 
-    try opts.logger.?.log(traces);
+    // try opts.logger.?.log(traces);
 
     const response = request.response;
     const status: http.Status = response.status;
