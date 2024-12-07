@@ -105,7 +105,7 @@ pub fn main() !void {
 
     try router.serve_route(
         "/trace",
-        Route.init().post(&deps, handlers.traceHandler),
+        Route.init().put(&deps, handlers.traceHandler),
     );
     try router.serve_route(
         "/metric",
@@ -145,7 +145,7 @@ fn appLogFn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (scope != .scorpio) return;
+    // if (scope != .scorpio or scope != .batch_writer) return;
     return chroma_logger.timeBasedLog(level, scope, format, args);
 }
 
