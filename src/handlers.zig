@@ -18,7 +18,7 @@ const HttpError = error{
 pub const Dependencies = struct {
     env: *std.process.EnvMap,
     ddog: *Agent.DdogClient,
-    tracer: *GenericBatchWriter(Trace),
+    tracer: *GenericBatchWriter([]Trace),
 };
 
 pub fn traceHandler(ctx: *Context, deps: *Dependencies) !void {
@@ -44,24 +44,25 @@ pub fn traceHandler(ctx: *Context, deps: *Dependencies) !void {
     defer parsed_trace.deinit();
 
     const result = deps.ddog.sendTrace(parsed_trace.value, .{
-        .logger = deps.tracer,
+        .batcher = deps.tracer,
         .compressible = true,
-        .compression_type = .{ .level = .best },
+        .compression_level = .{ .level = .fast },
     }) catch |err| {
         std.debug.print("Trace send error: {any}\n", .{err});
         return errorResponse(ctx, .@"Internal Server Error", "Failed to send traces");
     };
 
+    std.debug.print(" ==> {s}\n", .{result.@"0"});
     try successResponse(ctx, result.@"0");
 }
 
-pub fn logHandler(ctx: *Context, deps: *Dependencies) !void {
-    validateContentType(ctx, "application/json") catch |err| {
-        _ = err;
-        return errorResponse(ctx, .@"Bad Request", "Invalid content type");
-    };
-    _ = deps;
-}
+// pub fn logHandler(ctx: *Context, deps: *Dependencies) !void {
+//     validateContentType(ctx, "application/json") catch |err| {
+//         _ = err;
+//         return errorResponse(ctx, .@"Bad Request", "Invalid content type");
+//     };
+//     _ = deps;
+// }
 
 fn validateContentType(ctx: *Context, expected_content_type: []const u8) !void {
     const content_type = ctx.request.headers.get("content-type") orelse return HttpError.BadRequest;
