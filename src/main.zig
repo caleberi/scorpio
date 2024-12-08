@@ -30,7 +30,7 @@ const Features = @import("./ddog/features/index.zig");
 const assert = std.debug.assert;
 const time = std.time;
 const GenericBatchWriter = BatchWriter.GenericBatchWriter;
-const Tracer = GenericBatchWriter(Features.trace.Trace);
+const Tracer = GenericBatchWriter([]Features.trace.Trace);
 const scorpio_log = std.log.scoped(.scorpio);
 pub const std_options = .{
     .log_level = .debug,
@@ -107,14 +107,14 @@ pub fn main() !void {
         "/trace",
         Route.init().put(&deps, handlers.traceHandler),
     );
-    try router.serve_route(
-        "/metric",
-        Route.init().post(&deps, handlers.metricHandler),
-    );
-    try router.serve_route(
-        "/log",
-        Route.init().post(&deps, handlers.logHandler),
-    );
+    // try router.serve_route(
+    //     "/metric",
+    //     Route.init().post(&deps, handlers.metricHandler),
+    // );
+    // try router.serve_route(
+    //     "/log",
+    //     Route.init().post(&deps, handlers.logHandler),
+    // );
 
     _ = try std.Thread.spawn(.{}, struct {
         fn run(td: *Tardy, _router: *Router, config: *std.process.EnvMap) !void {
