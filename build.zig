@@ -70,13 +70,12 @@ pub fn build(b: *std.Build) !void {
     if (target.query.os_tag.? == .linux) {
         exe.root_module.addCMacro("DD_PROF", "1");
         exe.root_module.addIncludePath(b.path("src/ddprof/include"));
-        const ddprof = b.addStaticLibrary(.{
+        exe.linkLibrary(b.addStaticLibrary(.{
             .name = "libdd_profiling",
             .root_source_file = b.path("src/ddprof/lib/libdd_profiling.a"),
             .target = target,
             .optimize = optimize,
-        });
-        exe.linkLibrary(ddprof);
+        }));
         exe.linkLibC();
     }
 
