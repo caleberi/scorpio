@@ -192,14 +192,14 @@ pub fn GenericBatchWriter(comptime T: type) type {
             try runtime.fs.close(ctx, close_task, ctx.fd.*);
         }
 
-        pub fn log(self: *Self, entries: []T) !void {
+        pub fn log(self: *Self, entry: T) !void {
             ddog.info("Batching new entry", .{});
             self.mutex.lock();
-            for (entries) |entry| {
-                const node = try self.allocator.create(Node);
-                node.*.data = entry;
-                self.write_queue.append(node);
-            }
+
+            const node = try self.allocator.create(Node);
+            node.*.data = entry;
+            self.write_queue.append(node);
+
             const current_length = self.write_queue.len;
             self.mutex.unlock();
             ddog.info("Queue length after enqueue: {d}", .{current_length});
