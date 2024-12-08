@@ -12,6 +12,7 @@ fn resolve_target(b: *std.Build, target_requested: ?[]const u8) !std.Build.Resol
     const supported_targets = [_][]const u8{
         "aarch64-macos",
         "x86_64-macos",
+        "linux"
     };
 
     var target_supported = false;
@@ -49,30 +50,23 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    const zzz = b.dependency("zzz", .{
+    exe.root_module.addImport("chroma", b.dependency("chroma-logger", .{
         .target = target,
         .optimize = optimize,
-    }).module("zzz");
-
-    const tardy = b.dependency("tardy", .{
+    }).module("chroma-logger"));
+    exe.root_module.addImport("zzz", b.dependency("zzz", .{
         .target = target,
         .optimize = optimize,
-    }).module("tardy");
-
-    const args_parser = b.dependency("zig-args", .{
+    }).module("zzz"));
+    exe.root_module.addImport("args", b.dependency("zig-args", .{
         .target = target,
         .optimize = optimize,
-    }).module("args");
-
-    const chroma = b.dependency("chroma-logger", .{
+    }).module("args"));
+    exe.root_module.addImport("tardy", b.dependency("tardy", .{
         .target = target,
         .optimize = optimize,
-    }).module("chroma-logger");
-
-    exe.root_module.addImport("chroma", chroma);
-    exe.root_module.addImport("zzz", zzz);
-    exe.root_module.addImport("args", args_parser);
-    exe.root_module.addImport("tardy", tardy);
+    }).module("tardy"));
+    
     if (target.query.os_tag.? == .linux) {
         exe.root_module.addCMacro("DD_PROF", "1");
         exe.root_module.addIncludePath(b.path("src/ddprof/include"));
