@@ -1,16 +1,13 @@
 const std = @import("std");
 const http = std.http;
 const Agent = @import("../internals/agent.zig");
+const getStatusError = @import("../common/status.zig").getStatusError;
+const GenericBatchWriter = @import("../internals/batcher.zig").GenericBatchWriter;
 const chroma_logger = @import("chroma");
 pub const std_options = .{
     .log_level = .debug,
     .logFn = chroma_logger.timeBasedLog,
 };
-const ddog = std.log.scoped(.ddog_log);
-const Tardy = @import("tardy");
-const Runtime = Tardy.Runtime;
-const Task = Tardy.Task;
-const getStatusError = @import("../common/status.zig").getStatusError;
 
 pub const Log = struct {
     message: []const u8,
@@ -25,10 +22,11 @@ pub const Log = struct {
 pub const LogOpts = struct {
     compressible: bool = false,
     batched: bool = false,
+    batcher: ?*GenericBatchWriter = null,
     compression_type: std.compress.gzip.Options = .{ .level = .fast },
 };
 
-pub fn submitLog(self: *Agent.DdogClient, log: Agent.Log, opts: Agent.LogOpts) !Agent.Result {
+pub fn submitLog(self: *Agent.DdogClient, log: []Log, opts: Agent.LogOpts) !Agent.Result {
     if (opts.batched) {
         try self.log_batcher.batch(log);
         const msg: []const u8 = "Successfully batched log for later submission";
