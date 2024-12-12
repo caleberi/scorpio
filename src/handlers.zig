@@ -16,9 +16,9 @@ const HttpError = error{
 };
 
 pub const Dependencies = struct {
-    env: *std.process.EnvMap,
+    env: std.process.EnvMap,
     ddog: *Agent.DdogClient,
-    tracer: *GenericBatchWriter([]Trace),
+    tracer: *GenericBatchWriter,
 };
 
 pub fn traceHandler(ctx: *Context, deps: *Dependencies) !void {
@@ -35,7 +35,8 @@ pub fn traceHandler(ctx: *Context, deps: *Dependencies) !void {
     };
     defer ctx.allocator.free(data);
 
-    const parsed_trace = parseJson([][]Trace, ctx.allocator, data, .{ .ignore_unknown_fields = true }) catch |err| {
+    const parsed_trace = parseJson([]Trace, ctx.allocator, data, .{ .ignore_unknown_fields = true }) catch |err| {
+        std.debug.print("{any}\n", .{err});
         return errorResponse(ctx, switch (err) {
             HttpError.ParseError => .@"Bad Request",
             else => .@"Internal Server Error",
@@ -44,6 +45,7 @@ pub fn traceHandler(ctx: *Context, deps: *Dependencies) !void {
     defer parsed_trace.deinit();
 
     const result = deps.ddog.sendTrace(parsed_trace.value, .{
+        .batched = true,
         .batcher = deps.tracer,
         .compressible = true,
         .compression_level = .{ .level = .fast },
