@@ -24,13 +24,11 @@ const Route = Server.Route;
 const ArgsParser = @import("args");
 const Agent = @import("./ddog/internals/agent.zig");
 const chroma_logger = @import("chroma");
-const BatchWriter = @import("./ddog/internals/batcher.zig");
+const BatchWriter = @import("./ddog/internals/batcher.zig").GenericBatchWriter;
 const handlers = @import("handlers.zig");
 const Features = @import("./ddog/features/index.zig");
 const assert = std.debug.assert;
 const time = std.time;
-const GenericBatchWriter = BatchWriter.GenericBatchWriter;
-const Tracer = GenericBatchWriter([]Features.trace.Trace);
 const scorpio_log = std.log.scoped(.scorpio);
 pub const std_options = .{
     .log_level = .debug,
@@ -67,54 +65,44 @@ pub fn main() !void {
         }
     }
 
-    const args = try ArgsParser.parseForCurrentProcess(
-        Args,
-        allocator,
-        .silent,
-    );
+    const args = try ArgsParser.parseForCurrentProcess(Args, allocator, .silent);
     defer args.deinit();
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const env_map = try load_environment(allocator, args.options.file.?);
+    var env_map = try load_environment(allocator, args.options.file.?);
     defer env_map.deinit();
 
     const api_key = env_map.get("DD_API_KEY").?;
     const api_site = env_map.get("DD_SITE").?;
 
     const ddog = try allocator.create(Agent.DdogClient);
-    ddog.* = try Agent.DdogClient.init(allocator, api_key, api_site);
-    defer ddog.*.deinit();
     defer allocator.destroy(ddog);
+    ddog.* = try Agent.DdogClient.init(allocator, api_key, api_site);
+    defer ddog.deinit();
 
-    var tracer = try Tracer.init(allocator, "trace.batch");
-    const tracer_thd = try backgroundBatcher(
+    var tracer = try allocator.create(BatchWriter);
+    defer allocator.destroy(tracer);
+    tracer.* = try BatchWriter.init(allocator, "trace.batch");
+    defer tracer.deinit();
+    var tracer_thd = try backgroundBatcher(
         tracer,
         allocator,
     );
+    defer allocator.destroy(tracer_thd);
 
     var loop = try Tardy.init(.{
         .allocator = allocator,
         .threading = .auto,
     });
-    defer loop.deinit();
 
     var router = Router.init(allocator);
     defer router.deinit();
 
     var deps = handlers.Dependencies{ .ddog = ddog, .tracer = tracer, .env = env_map };
 
-    try router.serve_route(
-        "/trace",
-        Route.init().put(&deps, handlers.traceHandler),
-    );
-    // try router.serve_route(
-    //     "/metric",
-    //     Route.init().post(&deps, handlers.metricHandler),
-    // );
-    // try router.serve_route(
-    //     "/log",
-    //     Route.init().post(&deps, handlers.logHandler),
-    // );
+    try router.serve_route("/trace", Route.init().post(&deps, handlers.traceHandler));
+    // try router.serve_route("/metric", Route.init().post(&deps, handlers.metricHandler));
+    // // try router.serve_route( "/log",Route.init().post(&deps, handlers.logHandler));
 
     _ = try std.Thread.spawn(.{}, struct {
         fn run(td: *Tardy, _router: *Router, config: *std.process.EnvMap) !void {
@@ -124,18 +112,19 @@ pub fn main() !void {
             };
             try td.entry(&params, entry, {}, exit);
         }
-    }.run, .{ &loop, &router, env_map });
+    }.run, .{ &loop, &router, &env_map });
 
-    if (@import("config").@"os-tag" == .linux) {
-        _ = clib.ddprof_start_profiling();
-        defer clib.ddprof_stop_profiling(5000);
-    }
+    // if (@import("config").@"os-tag" == .linux) {
+    //     _ = clib.ddprof_start_profiling();
+    //     defer clib.ddprof_stop_profiling(5000);
+    // }
 
     _ = clib.signal(clib.SIGINT, signalHandler);
-    while (running.load(.acquire)) {}
 
+    while (running.load(.acquire)) {}
     tracer.shutdown();
     tracer_thd.join();
+    loop.deinit();
     std.process.exit(0);
 }
 
@@ -145,7 +134,7 @@ fn appLogFn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    // if (scope != .scorpio or scope != .batch_writer) return;
+    // if (scope != .scorpio) return;
     return chroma_logger.timeBasedLog(level, scope, format, args);
 }
 
@@ -155,7 +144,7 @@ fn signalHandler(sig: c_int) callconv(.C) void {
     scorpio_log.warn("Received shutdown signal, stopping server...", .{});
 }
 
-fn load_environment(allocator: std.mem.Allocator, filepath: []const u8) !*std.process.EnvMap {
+fn load_environment(allocator: std.mem.Allocator, filepath: []const u8) !std.process.EnvMap {
     assert(!std.mem.eql(u8, filepath, ""));
     var filename: []const u8 = undefined;
     var dirname: []const u8 = undefined;
@@ -163,19 +152,18 @@ fn load_environment(allocator: std.mem.Allocator, filepath: []const u8) !*std.pr
     var i: usize = filepath.len - 1;
     while (i > 0) : (i -= 1) {
         if (filepath[i] != '/') continue;
-        {
-            filename = filepath[i + 1 .. filepath.len];
-            dirname = filepath[0..i];
-            break;
-        }
+
+        filename = filepath[i + 1 .. filepath.len];
+        dirname = filepath[0..i];
+        break;
     }
 
-    var env = try allocator.create(std.process.EnvMap);
-    env.* = try std.process.getEnvMap(allocator);
+    var env = try std.process.getEnvMap(allocator);
     var dir = try std.fs.openDirAbsolute(dirname, .{ .access_sub_paths = false });
     defer dir.close();
     const file_sz = try dir.statFile(filename);
-    const content: []const u8 = try dir.readFileAlloc(allocator, filename, file_sz.size);
+    const content: []u8 = try dir.readFileAlloc(allocator, filename, file_sz.size);
+    defer allocator.free(content);
     var lines = std.mem.split(u8, content, "\n");
     while (lines.next()) |line| {
         if (line.len == 0) continue;
