@@ -7,6 +7,8 @@ const zhttp = zzz.HTTP;
 const Server = zhttp.Server(.plain);
 const Context = Server.Context;
 const Trace = Features.trace.Trace;
+const Log = Features.log.Log;
+const Metric = Features.metric.Metric;
 const GenericBatchWriter = @import("./ddog/internals/batcher.zig").GenericBatchWriter;
 
 const HttpError = error{
@@ -19,6 +21,8 @@ pub const Dependencies = struct {
     env: std.process.EnvMap,
     ddog: *Agent.DdogClient,
     tracer: *GenericBatchWriter,
+    logger: *GenericBatchWriter,
+    metric: *GenericBatchWriter,
 };
 
 pub fn traceHandler(ctx: *Context, deps: *Dependencies) !void {
@@ -58,13 +62,79 @@ pub fn traceHandler(ctx: *Context, deps: *Dependencies) !void {
     try successResponse(ctx, result.@"0");
 }
 
-// pub fn logHandler(ctx: *Context, deps: *Dependencies) !void {
-//     validateContentType(ctx, "application/json") catch |err| {
-//         _ = err;
-//         return errorResponse(ctx, .@"Bad Request", "Invalid content type");
-//     };
-//     _ = deps;
-// }
+pub fn logHandler(ctx: *Context, deps: *Dependencies) !void {
+    validateContentType(ctx, "application/json") catch |err| {
+        return errorResponse(ctx, switch (err) {
+            HttpError.BadRequest => .@"Bad Request",
+            else => .@"Internal Server Error",
+        }, "Invalid content type");
+    };
+
+    const data = ctx.allocator.dupe(u8, ctx.request.body) catch |err| {
+        std.debug.print("Memory allocation error: {any}\n", .{err});
+        return errorResponse(ctx, .@"Internal Server Error", "Memory allocation failed");
+    };
+    defer ctx.allocator.free(data);
+
+    const parsed_logs = parseJson([]Log, ctx.allocator, data, .{ .ignore_unknown_fields = true }) catch |err| {
+        std.debug.print("{any}\n", .{err});
+        return errorResponse(ctx, switch (err) {
+            HttpError.ParseError => .@"Bad Request",
+            else => .@"Internal Server Error",
+        }, "Failed to parse logs");
+    };
+    defer parsed_logs.deinit();
+
+    const result = deps.ddog.submitLog(parsed_logs.value, .{
+        .batched = true,
+        .batcher = deps.logger,
+        .compressible = true,
+        .compression_level = .{ .level = .fast },
+    }) catch |err| {
+        std.debug.print("Log send error: {any}\n", .{err});
+        return errorResponse(ctx, .@"Internal Server Error", "Failed to send logs");
+    };
+
+    std.debug.print(" ==> {s}\n", .{result.@"0"});
+    try successResponse(ctx, result.@"0");
+}
+
+pub fn metricHandler(ctx: *Context, deps: *Dependencies) !void {
+    validateContentType(ctx, "application/json") catch |err| {
+        return errorResponse(ctx, switch (err) {
+            HttpError.BadRequest => .@"Bad Request",
+            else => .@"Internal Server Error",
+        }, "Invalid content type");
+    };
+
+    const data = ctx.allocator.dupe(u8, ctx.request.body) catch |err| {
+        std.debug.print("Memory allocation error: {any}\n", .{err});
+        return errorResponse(ctx, .@"Internal Server Error", "Memory allocation failed");
+    };
+    defer ctx.allocator.free(data);
+
+    const parsed_metrics = parseJson([]Metric, ctx.allocator, data, .{ .ignore_unknown_fields = true }) catch |err| {
+        std.debug.print("{any}\n", .{err});
+        return errorResponse(ctx, switch (err) {
+            HttpError.ParseError => .@"Bad Request",
+            else => .@"Internal Server Error",
+        }, "Failed to parse logs");
+    };
+    defer parsed_metrics.deinit();
+
+    const result = deps.ddog.submitMetric(parsed_metrics.value, .{
+        .batched = true,
+        .batcher = deps.metric,
+        .compressible = true,
+        .compression_level = .{ .level = .fast },
+    }) catch |err| {
+        std.debug.print("Log send error: {any}\n", .{err});
+        return errorResponse(ctx, .@"Internal Server Error", "Failed to send logs");
+    };
+
+    std.debug.print(" ==> {s}\n", .{result.@"0"});
+    try successResponse(ctx, result.@"0");
+}
 
 fn validateContentType(ctx: *Context, expected_content_type: []const u8) !void {
     const content_type = ctx.request.headers.get("content-type") orelse return HttpError.BadRequest;
