@@ -6,6 +6,7 @@ const ddog = std.log.scoped(.ddog_log);
 const Tardy = @import("tardy");
 const getStatusError = @import("../common/status.zig").getStatusError;
 const GenericBatchWriter = @import("../internals/batcher.zig").GenericBatchWriter;
+const Utils = @import("../internals/utils.zig");
 const PayloadResult = struct {
     data: []u8,
     needs_free: bool,
@@ -72,7 +73,7 @@ pub fn submitTraces(self: *Agent.DdogClient, traces: []Trace, opts: TraceSubmiss
     var headers = try prepareHeaders(allocator, self.api_key);
     defer headers.deinit();
 
-    const json_payload = try serializeTraces(allocator, traces);
+    const json_payload = try Utils.serialize([]Trace, allocator, traces);
     defer allocator.free(json_payload);
 
     const payload = try compressPayloadIfNecessary(allocator, json_payload, traces, opts.compression_level);
@@ -92,6 +93,7 @@ pub fn submitTraces(self: *Agent.DdogClient, traces: []Trace, opts: TraceSubmiss
                 },
                 out.writer(),
             );
+            try out.append('\n');
             try batcher.log(try out.toOwnedSlice());
         }
     }
@@ -107,15 +109,8 @@ fn prepareHeaders(allocator: std.mem.Allocator, api_key: []const u8) !std.ArrayL
     return headers;
 }
 
-fn serializeTraces(allocator: std.mem.Allocator, traces: []Trace) TraceSubmissionError![]u8 {
-    var out = std.ArrayList(u8).init(allocator);
-    defer out.deinit();
-    try std.json.stringify(traces, .{}, out.writer());
-    return try out.toOwnedSlice();
-}
-
 fn compressPayloadIfNecessary(allocator: std.mem.Allocator, payload: []u8, traces: []Trace, compression_level: std.compress.gzip.Options) !PayloadResult {
-    if (traces.len <= 1) {
+    if (traces.len <= 20) {
         return .{
             .data = payload,
             .needs_free = false,
