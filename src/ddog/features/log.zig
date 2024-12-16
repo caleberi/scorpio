@@ -4,117 +4,170 @@ const Agent = @import("../internals/agent.zig");
 const getStatusError = @import("../common/status.zig").getStatusError;
 const GenericBatchWriter = @import("../internals/batcher.zig").GenericBatchWriter;
 const chroma_logger = @import("chroma");
+const Request = std.http.Client.Request;
+const Utils = @import("../internals/utils.zig");
+const PayloadResult = struct {
+    data: []u8,
+    needs_free: bool,
+};
+
 pub const std_options = .{
     .log_level = .debug,
     .logFn = chroma_logger.timeBasedLog,
 };
 
 pub const Log = struct {
-    message: []const u8,
-    service: []const u8,
-    status: []const u8,
-    ddsource: []const u8,
+    message: ?[]const u8 = null,
+    service: ?[]const u8 = null,
+    status: ?[]const u8 = null,
+    ddsource: ?[]const u8 = null,
 
     ddtags: ?[]const u8 = null,
     hostname: ?[]const u8 = null,
 };
 
-pub const LogOpts = struct {
+pub const LogSubmissionOptions = struct {
     compressible: bool = false,
     batched: bool = false,
     batcher: ?*GenericBatchWriter = null,
-    compression_type: std.compress.gzip.Options = .{ .level = .fast },
+    compression_level: std.compress.gzip.Options = .{ .level = .fast },
 };
 
-pub fn submitLog(self: *Agent.DdogClient, log: []Log, opts: Agent.LogOpts) !Agent.Result {
-    if (opts.batched) {
-        try self.log_batcher.batch(log);
-        const msg: []const u8 = "Successfully batched log for later submission";
-        return .{ msg[0..], null };
-    }
-    var headers = std.ArrayList(http.Header).init(self.allocator);
-    defer headers.deinit();
+const BuildRequestResult = struct {
+    request: Request,
+    header_buffer: []u8,
+    headers: *std.ArrayList(http.Header),
+    uri: []u8,
+};
+
+fn buildRequest(
+    allocator: std.mem.Allocator,
+    http_client: *http.Client,
+    api_key: []const u8,
+    site: []const u8,
+) !BuildRequestResult {
+    var headers = std.ArrayList(http.Header).init(allocator);
+    errdefer headers.deinit();
     try headers.append(.{ .name = "Content-Type", .value = "application/json" });
-    try headers.append(.{ .name = "DD-API-KEY", .value = self.api_key });
-    const uri = try std.fmt.allocPrint(self.allocator, "{s}/api/v2/logs", .{self.host});
-    defer self.allocator.free(uri);
+    try headers.append(.{ .name = "DD-API-KEY", .value = api_key });
 
-    var out = std.ArrayList(u8).init(self.allocator);
-    defer out.deinit();
-
-    try std.json.stringify(log, .{}, out.writer());
-    var payload = try out.toOwnedSlice();
-    if (opts.compressible) {
-        try headers.append(.{ .name = "Content-Encoding", .value = "gzip" });
-        var fbs = std.io.fixedBufferStream(payload);
-        out.clearAndFree();
-        var cmp = try std.compress.gzip.compressor(out.writer(), .{ .level = opts.compressible });
-        try cmp.compress(fbs.reader());
-        try cmp.flush();
-        payload = try out.toOwnedSlice();
-    }
+    const uri = try std.fmt.allocPrint(
+        allocator,
+        "https://http-intake.logs.{s}/api/v2/logs",
+        .{site},
+    );
+    errdefer allocator.free(uri);
 
     const headers_slice: []http.Header = try headers.toOwnedSlice();
     const url = try std.Uri.parse(uri);
-    const server_header_buffer = try self.allocator.alloc(u8, 4096);
-    defer self.allocator.free(server_header_buffer);
-    var request = try self.http_client.open(.POST, url, .{
-        .extra_headers = headers_slice,
-        .server_header_buffer = server_header_buffer,
-    });
-    defer request.deinit();
-    request.transfer_encoding.content_length = payload.len;
-    try request.send();
-    try request.writeAll(payload);
-    try request.finish();
-    try request.wait();
+    const server_header_buffer = try allocator.alloc(u8, 4096);
+    errdefer allocator.free(server_header_buffer);
 
-    const response = request.response;
-    const status: http.Status = response.status;
-    var body: []const u8 = undefined;
-    if (status != .accepted) {
-        body = request.reader().readAllAlloc(self.allocator, std.math.maxInt(i64)) catch unreachable;
-        ddog.err("[{any}] error={s}", .{ status, body });
-        const err = getStatusError(status);
-        // remember to deallocate using allocator
-        return .{ body, err };
-    }
-    body = request.reader().readAllAlloc(self.allocator, std.math.maxInt(i64)) catch unreachable;
-    return .{ body, null };
+    return BuildRequestResult{
+        .headers = &headers,
+        .request = try http_client.open(.POST, url, .{
+            .extra_headers = headers_slice,
+            .server_header_buffer = server_header_buffer,
+        }),
+        .uri = uri,
+        .header_buffer = server_header_buffer,
+    };
 }
 
-pub fn aggregateLog(self: *Agent.DataDogClient, event: Agent.AggregateLogEvent) !void {
-    var headers = std.ArrayList(http.Header).init(self.allocator);
-    defer headers.deinit();
-    try headers.append(.{ .name = "Content-Type", .value = "application/json" });
-    try headers.append(.{ .name = "DD-API-KEY", .value = self.api_key });
-    const uri = try std.fmt.allocPrint(self.allocator, "{s}/api/v2/logs/analytics/aggregate", .{self.host});
-    defer self.allocator.free(uri);
+fn compressPayloadIfNecessary(
+    allocator: std.mem.Allocator,
+    payload: []u8,
+    logs: []Log,
+    compression_level: std.compress.gzip.Options,
+) !PayloadResult {
+    if (logs.len <= 50) {
+        return .{
+            .data = payload,
+            .needs_free = false,
+        };
+    }
 
-    var out = std.ArrayList(u8).init(self.allocator);
-    defer out.deinit();
+    var out = std.ArrayList(u8).init(allocator);
+    errdefer out.deinit();
 
-    try std.json.stringify(event, .{}, out.writer());
-    const payload = try out.toOwnedSlice();
-    const headers_slice: []http.Header = try headers.toOwnedSlice();
-    var request = try self.http_client.open(.POST, uri, headers_slice, .{});
+    var fbs = std.io.fixedBufferStream(payload);
+    var cmp = try std.compress.gzip.compressor(
+        out.writer(),
+        compression_level,
+    );
+    try cmp.compress(fbs.reader());
+    try cmp.flush();
+
+    return .{
+        .data = try out.toOwnedSlice(),
+        .needs_free = false,
+    };
+}
+
+pub fn submitLogs(self: *Agent.DdogClient, logs: []Log, opts: LogSubmissionOptions) !Agent.Result {
+    var request_builder = try buildRequest(
+        self.allocator,
+        self.http_client,
+        self.api_key,
+        self.site,
+    );
+    defer request_builder.headers.deinit();
+    defer self.allocator.free(request_builder.header_buffer);
+    defer self.allocator.free(request_builder.uri);
+
+    const json_payload = try Utils.serialize([]Log, self.allocator, logs);
+    defer self.allocator.free(json_payload);
+    const payload = try compressPayloadIfNecessary(
+        self.allocator,
+        json_payload,
+        logs,
+        opts.compression_level,
+    );
+    defer if (payload.needs_free) self.allocator.free(payload.data);
+
+    var request = request_builder.request;
     defer request.deinit();
-    request.transfer_encoding.content_length = payload.len;
+    request.transfer_encoding = .{ .content_length = payload.data.len };
     try request.send();
-    try request.writeAll(payload);
+    try request.writeAll(payload.data);
     try request.finish();
     try request.wait();
+    if (opts.batched) {
+        if (opts.batcher) |batcher| {
+            var out = std.ArrayList(u8).init(self.allocator);
+            try std.json.stringify(
+                logs,
+                .{
+                    .emit_nonportable_numbers_as_strings = true,
+                    .escape_unicode = true,
+                    .emit_null_optional_fields = true,
+                    .emit_strings_as_arrays = false,
+                },
+                out.writer(),
+            );
+            try out.append('\n');
+            try batcher.log(try out.toOwnedSlice());
+        }
+    }
+    return processLogResponse(self.allocator, &request);
+}
 
+fn processLogResponse(allocator: std.mem.Allocator, request: *std.http.Client.Request) !Agent.Result {
     const response = request.response;
     const status: http.Status = response.status;
-    var body = undefined;
+
     if (status != .accepted) {
-        body = request.reader().readAllAlloc(self.allocator, std.math.maxInt(i64)) catch unreachable;
-        ddog.err("[{s}] error={s}", .{ status, body });
+        const body = request.reader().readAllAlloc(
+            allocator,
+            std.math.maxInt(i64),
+        ) catch unreachable;
         const err = getStatusError(status);
-        // remember to deallocate using allocator
         return .{ body, err };
     }
-    body = request.reader().readAllAlloc(self.allocator, std.math.maxInt(i64)) catch unreachable;
+    const body: []const u8 = request.reader().readAllAlloc(
+        allocator,
+        std.math.maxInt(i64),
+    ) catch unreachable;
+
     return .{ body, null };
 }
