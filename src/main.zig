@@ -82,13 +82,33 @@ pub fn main() !void {
 
     var tracer = try allocator.create(BatchWriter);
     defer allocator.destroy(tracer);
-    tracer.* = try BatchWriter.init(allocator, "trace.batch");
+    tracer.* = try BatchWriter.init(allocator, "traces.batch");
     defer tracer.deinit();
     var tracer_thd = try backgroundBatcher(
         tracer,
         allocator,
     );
     defer allocator.destroy(tracer_thd);
+
+    var logger = try allocator.create(BatchWriter);
+    defer allocator.destroy(logger);
+    logger.* = try BatchWriter.init(allocator, "logs.batch");
+    defer logger.deinit();
+    var logger_thd = try backgroundBatcher(
+        logger,
+        allocator,
+    );
+    defer allocator.destroy(logger_thd);
+
+    var metric = try allocator.create(BatchWriter);
+    defer allocator.destroy(logger);
+    metric.* = try BatchWriter.init(allocator, "metrics.batch");
+    defer logger.deinit();
+    var metric_thd = try backgroundBatcher(
+        metric,
+        allocator,
+    );
+    defer allocator.destroy(metric_thd);
 
     var loop = try Tardy.init(.{
         .allocator = allocator,
@@ -98,11 +118,11 @@ pub fn main() !void {
     var router = Router.init(allocator);
     defer router.deinit();
 
-    var deps = handlers.Dependencies{ .ddog = ddog, .tracer = tracer, .env = env_map };
+    var deps = handlers.Dependencies{ .ddog = ddog, .tracer = tracer, .env = env_map, .logger = logger, .metric = metric };
 
-    try router.serve_route("/trace", Route.init().post(&deps, handlers.traceHandler));
-    // try router.serve_route("/metric", Route.init().post(&deps, handlers.metricHandler));
-    // // try router.serve_route( "/log",Route.init().post(&deps, handlers.logHandler));
+    try router.serve_route("/traces", Route.init().post(&deps, handlers.traceHandler));
+    try router.serve_route("/metric", Route.init().post(&deps, handlers.metricHandler));
+    try router.serve_route("/logs", Route.init().post(&deps, handlers.logHandler));
 
     _ = try std.Thread.spawn(.{}, struct {
         fn run(td: *Tardy, _router: *Router, config: *std.process.EnvMap) !void {
@@ -122,8 +142,15 @@ pub fn main() !void {
     _ = clib.signal(clib.SIGINT, signalHandler);
 
     while (running.load(.acquire)) {}
+
     tracer.shutdown();
+    logger.shutdown();
+    metric.shutdown();
+
     tracer_thd.join();
+    logger_thd.join();
+    metric_thd.join();
+
     loop.deinit();
     std.process.exit(0);
 }
