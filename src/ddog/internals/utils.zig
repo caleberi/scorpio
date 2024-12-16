@@ -1,5 +1,12 @@
 const std = @import("std");
 
+pub fn serialize(comptime T: type, allocator: std.mem.Allocator, data: T) ![]u8 {
+    var out = std.ArrayList(u8).init(allocator);
+    defer out.deinit();
+    try std.json.stringify(data, .{}, out.writer());
+    return try out.toOwnedSlice();
+}
+
 pub fn ManagedPointer(comptime T: type) type {
     return struct {
         data: *T,

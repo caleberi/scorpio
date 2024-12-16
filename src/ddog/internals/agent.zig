@@ -8,9 +8,9 @@ const GenericBatchWriter = @import("./batcher.zig").GenericBatchWriter;
 const StatusError = @import("../common/status.zig").StatusError;
 const Features = @import("../features/index.zig");
 const Log = Features.log.Log;
-const LogOpts = Features.log.LogOpts;
-
+const LogSubmissionOptions = Features.log.LogSubmissionOptions;
 const Metric = Features.metric.Metric;
+const MetricSubmissionOptions = Features.metric.MetricSubmissionOptions;
 const Trace = Features.trace.Trace;
 const TraceSubmissionOptions = Features.trace.TraceSubmissionOptions;
 
@@ -18,6 +18,7 @@ pub const Result = std.meta.Tuple(&[_]type{ []const u8, ?StatusError });
 
 pub const DdogClient = struct {
     api_key: []const u8,
+    site: []const u8,
     host: []const u8,
     allocator: std.mem.Allocator,
     http_client: *http.Client,
@@ -32,6 +33,7 @@ pub const DdogClient = struct {
         return .{
             .api_key = api_key,
             .allocator = allocator,
+            .site = api_site,
             .host = try allocator.dupe(u8, site),
             .http_client = client,
         };
@@ -43,15 +45,15 @@ pub const DdogClient = struct {
         self.http_client.deinit();
     }
 
-    pub fn submitLog(self: *Self, logs: []Log, opts: LogOpts) !Result {
+    pub fn submitLog(self: *Self, logs: []Log, opts: LogSubmissionOptions) !Result {
         return try @call(.auto, AgentLogger.submitLogs, .{ self, logs, opts });
     }
 
-    // pub fn submitMetric(self: *DdogClient, metric: Metric) !Result {
-    //     return try @call(.auto, AgentMetricRecorder.submitMetric, .{ self, metric });
-    // }
+    pub fn submitMetric(self: *DdogClient, metric: []Metric, opts: MetricSubmissionOptions) !Result {
+        return try @call(.auto, AgentMetricRecorder.submitMetrics, .{ self, metric, opts });
+    }
 
-    pub fn sendTrace(self: *Self, trace: []Trace, opts: TraceSubmissionOptions) !Result {
-        return try @call(.auto, AgentTracer.submitTraces, .{ self, trace, opts });
+    pub fn sendTrace(self: *Self, traces: []Trace, opts: TraceSubmissionOptions) !Result {
+        return try @call(.auto, AgentTracer.submitTraces, .{ self, traces, opts });
     }
 };

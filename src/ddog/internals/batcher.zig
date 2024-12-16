@@ -140,11 +140,8 @@ pub const GenericBatchWriter = struct {
     }
 
     fn close_task(runtime: *Runtime, _: void, ctx: *FileProvision) anyerror!void {
-        ddog.debug("Starting close_task", .{});
-        ddog.info("done writing to handle={d}", .{ctx.fd.*});
         runtime.allocator.free(ctx.buffer);
         runtime.allocator.destroy(ctx.fd);
-        ddog.info("handling the next request, done with = {s}", .{ctx.buffer});
         try runtime.spawn_delay(void, ctx, monitor_task, .{
             .nanos = std.time.ns_per_s * 5,
         });
@@ -212,3 +209,78 @@ pub const GenericBatchWriter = struct {
         self.allocator.destroy(self.event_loop);
     }
 };
+
+const testing = std.testing;
+const time = std.time;
+
+test "GenericBatchWriter initialization and basic operations" {
+    const allocator = testing.allocator;
+    const test_log_file = try std.testing.tmpDir(.{}).dir.createFile("test_log.txt", .{});
+    defer test_log_file.close();
+    const log_file_path = try test_log_file.realpathAlloc(allocator, ".");
+    defer allocator.free(log_file_path);
+
+    var batch_writer = try GenericBatchWriter.init(allocator, log_file_path);
+    defer batch_writer.deinit();
+
+    try testing.expectEqual(false, batch_writer._shutdown);
+    try testing.expectEqual(@as(usize, 0), batch_writer.write_queue.len);
+
+    try batch_writer.log("Test log entry 1");
+    try batch_writer.log("Test log entry 2");
+    try testing.expectEqual(@as(usize, 2), batch_writer.write_queue.len);
+
+    try batch_writer.run();
+
+    time.sleep(time.ns_per_s * 2);
+    batch_writer.shutdown();
+    try testing.expect(batch_writer._shutdown);
+}
+
+test "GenericBatchWriter error handling" {
+    const allocator = testing.allocator;
+    const invalid_path = "/path/to/nonexistent/directory/test.log";
+    GenericBatchWriter.init(allocator, invalid_path) catch |err| {
+        try testing.expectError(error.FileNotFound, err);
+    };
+}
+
+test "GenericBatchWriter concurrency and queue management" {
+    const allocator = testing.allocator;
+
+    const test_log_file = try std.testing.tmpDir(.{}).dir.createFile("concurrent_log.txt", .{});
+    defer test_log_file.close();
+    const log_file_path = try test_log_file.realpathAlloc(allocator, ".");
+    defer allocator.free(log_file_path);
+
+    var batch_writer = try GenericBatchWriter.init(allocator, log_file_path);
+    defer batch_writer.deinit();
+
+    const num_threads = 4;
+    const entries_per_thread = 50;
+
+    var threads: [num_threads]std.Thread = undefined;
+    for (&threads, 0..) |*thread, thread_num| {
+        thread.* = try std.Thread.spawn(.{}, struct {
+            fn threadFunc(writer: *GenericBatchWriter, thread_id: usize) !void {
+                var i: usize = 0;
+                while (i < entries_per_thread) : (i += 1) {
+                    const log_entry = try std.fmt.allocPrint(writer.allocator, "Thread {d} - Entry {d}", .{ thread_id, i });
+                    defer writer.allocator.free(log_entry);
+                    try writer.log(log_entry);
+                }
+            }
+        }.threadFunc, .{ &batch_writer, thread_num });
+    }
+
+    for (&threads) |*thread| {
+        thread.join();
+    }
+
+    try testing.expectEqual(@as(usize, num_threads * entries_per_thread), batch_writer.write_queue.len);
+
+    try batch_writer.run();
+
+    time.sleep(time.ns_per_s * 5);
+    batch_writer.shutdown();
+}
