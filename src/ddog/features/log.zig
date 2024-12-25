@@ -2,7 +2,7 @@ const std = @import("std");
 const http = std.http;
 const Agent = @import("../internals/agent.zig");
 const getStatusError = @import("../common/status.zig").getStatusError;
-const GenericBatchWriter = @import("../internals/batcher.zig").GenericBatchWriter;
+const BatchWriter = @import("../internals/batcher.zig").BatchWriter;
 const chroma_logger = @import("chroma");
 const Request = std.http.Client.Request;
 const Utils = @import("../internals/utils.zig");
@@ -29,7 +29,7 @@ pub const Log = struct {
 pub const LogSubmissionOptions = struct {
     compressible: bool = false,
     batched: bool = false,
-    batcher: ?*GenericBatchWriter = null,
+    batcher: ?*BatchWriter = null,
     compression_level: std.compress.gzip.Options = .{ .level = .fast },
 };
 
