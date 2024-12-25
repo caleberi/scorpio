@@ -9,7 +9,7 @@ const Context = Server.Context;
 const Trace = Features.trace.Trace;
 const Log = Features.log.Log;
 const Metric = Features.metric.Metric;
-const GenericBatchWriter = @import("./ddog/internals/batcher.zig").GenericBatchWriter;
+const BatchWriter = @import("./ddog/internals/batcher.zig").BatchWriter;
 
 const HttpError = error{
     BadRequest,
@@ -20,9 +20,9 @@ const HttpError = error{
 pub const Dependencies = struct {
     env: std.process.EnvMap,
     ddog: *Agent.DdogClient,
-    tracer: *GenericBatchWriter,
-    logger: *GenericBatchWriter,
-    metric: *GenericBatchWriter,
+    tracer: *BatchWriter,
+    logger: *BatchWriter,
+    metric: *BatchWriter,
 };
 
 pub fn traceHandler(ctx: *Context, deps: *Dependencies) !void {
@@ -39,7 +39,9 @@ pub fn traceHandler(ctx: *Context, deps: *Dependencies) !void {
     };
     defer ctx.allocator.free(data);
 
-    const parsed_trace = parseJson([]Trace, ctx.allocator, data, .{ .ignore_unknown_fields = true }) catch |err| {
+    const parsed_trace = parseJson([]Trace, ctx.allocator, data, .{
+        .ignore_unknown_fields = true,
+    }) catch |err| {
         std.debug.print("{any}\n", .{err});
         return errorResponse(ctx, switch (err) {
             HttpError.ParseError => .@"Bad Request",

@@ -24,7 +24,7 @@ const Route = Server.Route;
 const ArgsParser = @import("args");
 const Agent = @import("./ddog/internals/agent.zig");
 const chroma_logger = @import("chroma");
-const BatchWriter = @import("./ddog/internals/batcher.zig").GenericBatchWriter;
+const BatchWriter = @import("./ddog/internals/batcher.zig").BatchWriter;
 const handlers = @import("handlers.zig");
 const Features = @import("./ddog/features/index.zig");
 const assert = std.debug.assert;
@@ -57,7 +57,10 @@ const EntryParams = struct {
 };
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{ .thread_safe = true }){};
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        .thread_safe = true,
+        // .verbose_log = true,
+    }){};
     const allocator = gpa.allocator();
     defer {
         if (gpa.deinit() != .ok) {
@@ -134,10 +137,10 @@ pub fn main() !void {
         }
     }.run, .{ &loop, &router, &env_map });
 
-    // if (@import("config").@"os-tag" == .linux) {
-    //     _ = clib.ddprof_start_profiling();
-    //     defer clib.ddprof_stop_profiling(5000);
-    // }
+    if (@import("config").@"os-tag" == .linux) {
+        _ = clib.ddprof_start_profiling();
+        defer clib.ddprof_stop_profiling(5000);
+    }
 
     _ = clib.signal(clib.SIGINT, signalHandler);
 
@@ -227,6 +230,10 @@ fn entry(rt: *Runtime, ep: *EntryParams) !void {
     var server = Server.init(.{
         .allocator = rt.allocator,
         .size_connections_max = connection_per_thread,
+        .size_socket_buffer = 10240,
+        .size_recv_buffer_max = 10240,
+        .size_recv_buffer_retain = 10240,
+        .size_request_max = 10240,
     });
 
     const port = std.fmt.parseInt(u16, ep.config.get("APP_PORT").?, 10) catch 9090;
