@@ -5,7 +5,7 @@ const chroma_logger = @import("chroma");
 const ddog = std.log.scoped(.ddog_log);
 const Tardy = @import("tardy");
 const getStatusError = @import("../common/status.zig").getStatusError;
-const GenericBatchWriter = @import("../internals/batcher.zig").GenericBatchWriter;
+const BatchWriter = @import("../internals/batcher.zig").BatchWriter;
 const Utils = @import("../internals/utils.zig");
 const PayloadResult = struct {
     data: []u8,
@@ -61,7 +61,7 @@ pub const Metric = struct {
 pub const MetricSubmissionOptions = struct {
     compressible: bool = false,
     batched: bool = false,
-    batcher: ?*GenericBatchWriter = null,
+    batcher: ?*BatchWriter = null,
     compression_level: std.compress.gzip.Options = .{ .level = .fast },
 };
 

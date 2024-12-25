@@ -3,9 +3,10 @@ const http = std.http;
 const Agent = @import("../internals/agent.zig");
 const chroma_logger = @import("chroma");
 const ddog = std.log.scoped(.ddog_log);
+const mime = @import("zzz").HTTP.Mime;
 const Tardy = @import("tardy");
 const getStatusError = @import("../common/status.zig").getStatusError;
-const GenericBatchWriter = @import("../internals/batcher.zig").GenericBatchWriter;
+const BatchWriter = @import("../internals/batcher.zig").BatchWriter;
 const Utils = @import("../internals/utils.zig");
 const PayloadResult = struct {
     data: []u8,
@@ -53,7 +54,7 @@ pub const Trace = []Span;
 pub const TraceSubmissionOptions = struct {
     compressible: bool = false,
     batched: bool = false,
-    batcher: ?*GenericBatchWriter = null,
+    batcher: ?*BatchWriter = null,
     compression_level: std.compress.gzip.Options = .{ .level = .fast },
 };
 
@@ -75,6 +76,7 @@ pub fn submitTraces(self: *Agent.DdogClient, traces: []Trace, opts: TraceSubmiss
 
     const json_payload = try Utils.serialize([]Trace, allocator, traces);
     defer allocator.free(json_payload);
+    std.log.debug("{s}", .{json_payload});
 
     const payload = try compressPayloadIfNecessary(allocator, json_payload, traces, opts.compression_level);
     defer if (payload.needs_free) allocator.free(payload.data);
@@ -104,7 +106,7 @@ pub fn submitTraces(self: *Agent.DdogClient, traces: []Trace, opts: TraceSubmiss
 fn prepareHeaders(allocator: std.mem.Allocator, api_key: []const u8) !std.ArrayList(http.Header) {
     var headers = std.ArrayList(http.Header).init(allocator);
     errdefer headers.deinit();
-    try headers.append(.{ .name = "Content-Type", .value = "application/json" });
+    try headers.append(.{ .name = "Content-Type", .value = mime.JSON.content_type });
     try headers.append(.{ .name = "DD-API-KEY", .value = api_key });
     return headers;
 }
@@ -141,7 +143,9 @@ fn sendTracesRequest(http_client: *std.http.Client, headers: []http.Header, payl
         .extra_headers = headers,
         .server_header_buffer = server_header_buffer,
     });
-    request.transfer_encoding = .{ .content_length = payload.len };
+    request.transfer_encoding = .{
+        .content_length = payload.len,
+    };
     try request.send();
     try request.writeAll(payload);
     try request.finish();
