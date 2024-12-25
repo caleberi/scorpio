@@ -11,7 +11,7 @@ pub const std_options = .{
 };
 pub const ddog = std.log.scoped(.batch_writer);
 
-pub const GenericBatchWriter = struct {
+pub const BatchWriter = struct {
     log_file: []const u8,
     write_queue: Queue,
     event_loop: *Tardy,
@@ -25,7 +25,7 @@ pub const GenericBatchWriter = struct {
     const Queue = std.DoublyLinkedList([]u8);
 
     const FileProvision = struct {
-        self: *GenericBatchWriter = undefined,
+        self: *BatchWriter = undefined,
         data: []u8 = undefined,
         buffer: []const u8 = undefined,
         offset: usize = 0,
@@ -36,10 +36,10 @@ pub const GenericBatchWriter = struct {
     const Node = Queue.Node;
     const ArgsParams = struct {
         data: []u8 = undefined,
-        ctx: *GenericBatchWriter = undefined,
+        ctx: *BatchWriter = undefined,
     };
 
-    pub fn init(allocator: std.mem.Allocator, file: []const u8) !GenericBatchWriter {
+    pub fn init(allocator: std.mem.Allocator, file: []const u8) !BatchWriter {
         const tardy = try allocator.create(Tardy);
         tardy.* = try Tardy.init(.{
             .allocator = allocator,
@@ -110,24 +110,19 @@ pub const GenericBatchWriter = struct {
     }
 
     fn check_queue_task(runtime: *Runtime, _: void, ctx: *FileProvision) !void {
-        ddog.debug("Starting check_queue_task", .{});
         ctx.self.mutex.lock();
         const length = ctx.self.write_queue.len;
         ctx.self.mutex.unlock();
-        ddog.info("Queue length after batch: {d}", .{length});
         if (length > 0) {
-            ddog.info("Processing node [X]", .{});
             try runtime.spawn(void, ctx, monitor_task);
             return;
         }
 
         if (ctx.self._shutdown) {
-            ddog.info("Shutting down {s}", .{@typeName(Self)});
             while (!runtime.scheduler.tasks.empty()) {}
             runtime.allocator.destroy(ctx);
             runtime.stop();
         }
-        ddog.debug("delay spawn check_queue_task", .{});
         // Check again in 1 second
         try runtime.spawn_delay(
             void,
@@ -149,7 +144,6 @@ pub const GenericBatchWriter = struct {
     }
 
     fn write_task(runtime: *Runtime, length: i32, ctx: *FileProvision) anyerror!void {
-        ddog.debug("Starting write_task", .{});
         defer ctx.self.last_write_time = std.time.nanoTimestamp();
         if (length <= 0) {
             try runtime.fs.close(ctx, close_task, ctx.fd.*);
@@ -178,8 +172,6 @@ pub const GenericBatchWriter = struct {
         const node = try self.allocator.create(Node);
         node.*.data = entry;
         self.write_queue.append(node);
-        const current_length = self.write_queue.len;
-        ddog.info("Queue length after enqueue: {d}", .{current_length});
     }
 
     pub fn run(self: *Self) !void {
@@ -220,7 +212,7 @@ test "GenericBatchWriter initialization and basic operations" {
     const log_file_path = try test_log_file.realpathAlloc(allocator, ".");
     defer allocator.free(log_file_path);
 
-    var batch_writer = try GenericBatchWriter.init(allocator, log_file_path);
+    var batch_writer = try BatchWriter.init(allocator, log_file_path);
     defer batch_writer.deinit();
 
     try testing.expectEqual(false, batch_writer._shutdown);
@@ -240,7 +232,7 @@ test "GenericBatchWriter initialization and basic operations" {
 test "GenericBatchWriter error handling" {
     const allocator = testing.allocator;
     const invalid_path = "/path/to/nonexistent/directory/test.log";
-    GenericBatchWriter.init(allocator, invalid_path) catch |err| {
+    BatchWriter.init(allocator, invalid_path) catch |err| {
         try testing.expectError(error.FileNotFound, err);
     };
 }
@@ -253,7 +245,7 @@ test "GenericBatchWriter concurrency and queue management" {
     const log_file_path = try test_log_file.realpathAlloc(allocator, ".");
     defer allocator.free(log_file_path);
 
-    var batch_writer = try GenericBatchWriter.init(allocator, log_file_path);
+    var batch_writer = try BatchWriter.init(allocator, log_file_path);
     defer batch_writer.deinit();
 
     const num_threads = 4;
@@ -262,7 +254,7 @@ test "GenericBatchWriter concurrency and queue management" {
     var threads: [num_threads]std.Thread = undefined;
     for (&threads, 0..) |*thread, thread_num| {
         thread.* = try std.Thread.spawn(.{}, struct {
-            fn threadFunc(writer: *GenericBatchWriter, thread_id: usize) !void {
+            fn threadFunc(writer: *BatchWriter, thread_id: usize) !void {
                 var i: usize = 0;
                 while (i < entries_per_thread) : (i += 1) {
                     const log_entry = try std.fmt.allocPrint(writer.allocator, "Thread {d} - Entry {d}", .{ thread_id, i });
