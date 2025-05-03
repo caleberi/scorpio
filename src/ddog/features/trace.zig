@@ -111,7 +111,12 @@ fn prepareHeaders(allocator: std.mem.Allocator, api_key: []const u8) !std.ArrayL
     return headers;
 }
 
-fn compressPayloadIfNecessary(allocator: std.mem.Allocator, payload: []u8, traces: []Trace, compression_level: std.compress.gzip.Options) !PayloadResult {
+fn compressPayloadIfNecessary(
+    allocator: std.mem.Allocator,
+    payload: []u8,
+    traces: []Trace,
+    compression_level: std.compress.gzip.Options,
+) !PayloadResult {
     if (traces.len <= 20) {
         return .{
             .data = payload,
