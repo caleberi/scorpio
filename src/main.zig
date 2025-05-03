@@ -10,9 +10,9 @@ const pprof = @cImport({
     }
 });
 const zzz = @import("zzz");
+const tardy = @import("tardy");
 const http = std.http;
 const zhttp = zzz.HTTP;
-const tardy = @import("tardy");
 const Tardy = tardy.Tardy(.auto);
 const Runtime = tardy.Runtime;
 
@@ -59,7 +59,7 @@ const EntryParams = struct {
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .thread_safe = true,
-        // .verbose_log = true,
+        .verbose_log = true,
     }){};
     const allocator = gpa.allocator();
     defer {
@@ -121,11 +121,17 @@ pub fn main() !void {
     var router = Router.init(allocator);
     defer router.deinit();
 
-    var deps = handlers.Dependencies{ .ddog = ddog, .tracer = tracer, .env = env_map, .logger = logger, .metric = metric };
+    var deps = handlers.Dependencies{
+        .ddog = ddog,
+        .tracer = tracer,
+        .env = env_map,
+        .logger = logger,
+        .metric = metric,
+    };
 
+    try router.serve_route("/logs", Route.init().post(&deps, handlers.logHandler));
     try router.serve_route("/traces", Route.init().post(&deps, handlers.traceHandler));
     try router.serve_route("/metric", Route.init().post(&deps, handlers.metricHandler));
-    try router.serve_route("/logs", Route.init().post(&deps, handlers.logHandler));
 
     _ = try std.Thread.spawn(.{}, struct {
         fn run(td: *Tardy, _router: *Router, config: *std.process.EnvMap) !void {

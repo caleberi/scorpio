@@ -78,7 +78,9 @@ pub fn logHandler(ctx: *Context, deps: *Dependencies) !void {
     };
     defer ctx.allocator.free(data);
 
-    const parsed_logs = parseJson([]Log, ctx.allocator, data, .{ .ignore_unknown_fields = true }) catch |err| {
+    const parsed_logs = parseJson([]Log, ctx.allocator, data, .{
+        .ignore_unknown_fields = true,
+    }) catch |err| {
         std.debug.print("{any}\n", .{err});
         return errorResponse(ctx, switch (err) {
             HttpError.ParseError => .@"Bad Request",
