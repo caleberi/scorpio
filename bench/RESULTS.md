@@ -4,6 +4,8 @@ Compares the recursive `EnvironmentParser` core from
 [gist eaa188cd…](https://gist.github.com/caleberi/eaa188cd290a61e211b5157e98114691)
 against the FieldPlan rewrite (comptime leaf/alloc plan + two flat runtime passes).
 
+How each parser works (flow + sequence diagrams): [`DIAGRAMS.md`](./DIAGRAMS.md).
+
 ## Method
 
 - Zig **0.15.2**, `-OReleaseFast`
