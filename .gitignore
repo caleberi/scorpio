@@ -3,3 +3,4 @@ zig-cache/
 *.core
 .zig-cache/
 zig-pkg/
+.env

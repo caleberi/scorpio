@@ -1,0 +1,11 @@
+# SERVER_PORT=9090
+# LOG_LEVEL=info
+# BLOG_INPUT_DIR=pages
+# BLOG_PACK_DIR=packed/blog
+# BLOG_STAGING_DIR=packed/staging
+# BLOG_PREFETCH_NEIGHBORS=1
+# CLOUDINARY_CLOUDNAME=demo
+# CLOUDINARY_API_KEY=key
+# CLOUDINARY_API_SECRET=secret
+# CLOUDINARY_PACK_PREFIX=scorpio/blog/packed
+# DB_URL=postgresql://postgres:postgres@127.0.0.1:5432/scorpio
