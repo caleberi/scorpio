@@ -181,6 +181,7 @@ pub fn EnvironmentParser(comptime T: type) type {
 }
 
 test "environment parser" {
+    const io = zstd.testing.io;
     const Test = struct {
         name: []const u8,
         sub_path: []const u8,
@@ -200,7 +201,7 @@ test "environment parser" {
             sub_path: []const u8,
             content: []const u8,
         ) ![]u8 {
-            try tmp_dir.dir.writeFile(.{
+            try tmp_dir.dir.writeFile(io, .{
                 .data = content,
                 .sub_path = sub_path,
             });
@@ -426,7 +427,7 @@ test "environment parser" {
             testcase.content,
         );
         defer allocator.free(abs_path);
-        defer tmp_dir.dir.deleteFile(testcase.sub_path) catch {};
+        defer tmp_dir.dir.deleteFile(io, testcase.sub_path) catch {};
 
         try testcase.run_test(allocator, abs_path, testcase.prefix);
     }
