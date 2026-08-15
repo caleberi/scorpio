@@ -1,6 +1,5 @@
-bin
-.a
-.so
-.zig-cache/**
-.zig-cache/
 zig-out/
+zig-cache/
+*.core
+.zig-cache/
+zig-pkg/
