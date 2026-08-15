@@ -1,0 +1,87 @@
+export type Messages = {
+  nav: {
+    blog: string
+    github: string
+    community: string
+    console: string
+  }
+  sidebar: {
+    pagesBlog: string
+    loading: string
+    language: string
+  }
+  index: {
+    related: string
+    loadingPosts: string
+    empty: string
+  }
+  footer: {
+    related: string
+    empty: string
+    social: string
+    linkedin: string
+    twitter: string
+    instagram: string
+    github: string
+    builtWith: string
+  }
+  post: {
+    missingLabel: string
+    missingTitle: string
+    back: string
+    article: string
+    unknownAuthor: string
+    missingTipBefore: string
+    missingTipAfter: string
+  }
+  metadata: {
+    label: string
+    date: string
+    author: string
+    readingTime: string
+    readingTimeValue: string
+    categories: string
+    agents: string
+    copyForLlm: string
+    viewMarkdown: string
+    share: string
+    twitter: string
+    linkedin: string
+  }
+  comments: {
+    label: string
+    name: string
+    comment: string
+    reply: string
+    namePlaceholder: string
+    commentPlaceholder: string
+    replyPlaceholder: string
+    required: string
+    requestFailed: string
+    sending: string
+    postComment: string
+    postReply: string
+    cancel: string
+    loading: string
+    retry: string
+    empty: string
+    deleteCommentConfirm: string
+    deleteReplyConfirm: string
+    delete: string
+    loadFailed: string
+    deleteFailed: string
+  }
+  console: {
+    title: string
+    minimize: string
+    close: string
+    commandAria: string
+    currentTheme: string
+  }
+  article: {
+    figure: string
+  }
+  common: {
+    failedToLoad: string
+  }
+}
