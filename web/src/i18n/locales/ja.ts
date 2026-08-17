@@ -16,6 +16,10 @@ export const ja: Messages = {
     related: '/ 関連記事',
     loadingPosts: '記事を読み込み中…',
     empty: 'パック済みドキュメントがありません。`zig build pack` を実行してから API を起動してください。',
+    prevPage: '← 前へ',
+    nextPage: '次へ →',
+    pageOf: '/ {page} / {pages} ページ',
+    pagination: '記事一覧のページ送り',
   },
   footer: {
     related: '/ 関連記事',

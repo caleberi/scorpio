@@ -16,6 +16,10 @@ export const es: Messages = {
     related: '/ Artículos relacionados',
     loadingPosts: 'cargando artículos…',
     empty: 'No hay documentos empaquetados. Ejecuta `zig build pack` y arranca la API.',
+    prevPage: '← Anterior',
+    nextPage: 'Siguiente →',
+    pageOf: '/ Página {page} de {pages}',
+    pagination: 'Paginación de la lista de artículos',
   },
   footer: {
     related: '/ Artículos relacionados',

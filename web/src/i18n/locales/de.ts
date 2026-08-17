@@ -16,6 +16,10 @@ export const de: Messages = {
     related: '/ Ähnliche Artikel',
     loadingPosts: 'Artikel werden geladen…',
     empty: 'Keine gepackten Dokumente. Führe `zig build pack` aus und starte die API.',
+    prevPage: '← Zurück',
+    nextPage: 'Weiter →',
+    pageOf: '/ Seite {page} von {pages}',
+    pagination: 'Seitennummerierung der Artikelliste',
   },
   footer: {
     related: '/ Ähnliche Artikel',

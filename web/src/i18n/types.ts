@@ -14,6 +14,10 @@ export type Messages = {
     related: string
     loadingPosts: string
     empty: string
+    prevPage: string
+    nextPage: string
+    pageOf: string
+    pagination: string
   }
   footer: {
     related: string
