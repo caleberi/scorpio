@@ -102,11 +102,13 @@ pub const Dir = struct {
 
     pub fn makePath(self: Dir, sub_path: []const u8) !void {
         if (sub_path.len == 0) return;
-        var it = std.mem.tokenizeAny(u8, sub_path, "/");
+        var iterator = std.mem.tokenizeAny(u8, sub_path, "/");
+
         var prefix: std.ArrayList(u8) = .empty;
         defer prefix.deinit(std.heap.page_allocator);
+
         var first = true;
-        while (it.next()) |part| {
+        while (iterator.next()) |part| {
             if (part.len == 0 or std.mem.eql(u8, part, ".")) continue;
             if (!first) try prefix.append(std.heap.page_allocator, '/');
             first = false;
@@ -128,13 +130,23 @@ pub const Dir = struct {
         };
         if (options.truncate) flags.TRUNC = true;
         if (options.exclusive) flags.EXCL = true;
-        const fd = try posix.openat(self.fd, sub_path, flags, options.mode);
+        const fd = try posix.openat(
+            self.fd,
+            sub_path,
+            flags,
+            options.mode,
+        );
         return .{ .handle = fd };
     }
 
     pub fn openFile(self: Dir, sub_path: []const u8, options: OpenFileOptions) !File {
         _ = options;
-        const fd = try posix.openat(self.fd, sub_path, .{ .ACCMODE = .RDONLY }, 0);
+        const fd = try posix.openat(
+            self.fd,
+            sub_path,
+            .{ .ACCMODE = .RDONLY },
+            0,
+        );
         return .{ .handle = fd };
     }
 
@@ -159,10 +171,13 @@ pub const Dir = struct {
     pub fn readFileAlloc(self: Dir, allocator: std.mem.Allocator, sub_path: []const u8, max_bytes: usize) ![]u8 {
         const file = try self.openFile(sub_path, .{});
         defer file.close();
+
         const st = try file.stat();
         if (st.size > max_bytes) return error.FileTooBig;
+
         const buf = try allocator.alloc(u8, @intCast(st.size));
         errdefer allocator.free(buf);
+
         var total: usize = 0;
         while (total < buf.len) {
             const n = try check(libc.read(file.handle, buf[total..].ptr, buf.len - total));
@@ -271,6 +286,7 @@ pub const Walker = struct {
             .iter = iter,
             .dirname_len = 0,
         });
+
         return .{
             .allocator = allocator,
             .stack = stack,
