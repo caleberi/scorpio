@@ -29,6 +29,7 @@ pub const uploader = struct {
 
 pub const router = @import("router/root.zig");
 pub const fs = @import("compat_fs.zig");
+pub const validator = @import("validator.zig");
 
 test {
     _ = validation.schema;
@@ -45,4 +46,5 @@ test {
     _ = router;
     _ = dotenv.loader;
     _ = dotenv.binder;
+    _ = validator;
 }
