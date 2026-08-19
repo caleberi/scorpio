@@ -1000,7 +1000,7 @@ test "complex environment configuration with validation" {
         \\
         \\SMS_PROVIDER_NAME=twilio
         \\SMS_BASE_URL=https://api.twilio.com/2010-04-01
-        \\SMS_TOKEN=ACabcdef1234567890abcdef1234567890
+        \\SMS_TOKEN=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     ;
 
     const tmp_dir = zstd.testing.tmpDir(.{});
