@@ -205,7 +205,10 @@ pub fn build(b: *zstd.Build) !void {
         }),
     });
     pack_exe.root_module.link_libc = true;
+    b.installArtifact(pack_exe);
     const pack_cmd = b.addRunArtifact(pack_exe);
+    pack_cmd.has_side_effects = true;
+    pack_cmd.setCwd(b.path("."));
     const pack_step = b.step("pack", "Process media, pack blog markdown, upload changed chunks");
     pack_step.dependOn(&pack_cmd.step);
 
@@ -219,11 +222,17 @@ pub fn build(b: *zstd.Build) !void {
         }),
     });
     prerun_exe.root_module.link_libc = true;
+    b.installArtifact(prerun_exe);
     const prerun_cmd = b.addRunArtifact(prerun_exe);
+    prerun_cmd.has_side_effects = true;
+    prerun_cmd.setCwd(b.path("."));
+    prerun_cmd.step.dependOn(pack_step);
     const prerun_step = b.step("prerun", "Apply SQL scripts and upsert blog rows from manifest");
     prerun_step.dependOn(&prerun_cmd.step);
 
     const run_cmd = b.addRunArtifact(exe);
+    run_cmd.has_side_effects = true;
+    run_cmd.setCwd(b.path("."));
     run_cmd.step.dependOn(b.getInstallStep());
     run_cmd.step.dependOn(prerun_step);
 
