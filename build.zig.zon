@@ -1,55 +1,25 @@
 .{
-    // This is the default name used by packages depending on this one. For
-    // example, when a user runs `zig fetch --save <url>`, this field is used
-    // as the key in the `dependencies` table. Although the user can choose a
-    // different name, most users will stick with this provided value.
-    //
-    // It is redundant to include "zig" in this name because it is already
-    // within the Zig package namespace.
-    .name = "scorpio",
-
-    // This is a [Semantic Version](https://semver.org/).
-    // In a future version of Zig it will be used for package deduplication.
+    .name = .scorpio,
     .version = "0.0.0",
-
-    // This field is optional.
-    // This is currently advisory only; Zig does not yet do anything
-    // with this value.
-    //.minimum_zig_version = "0.11.0",
-
-    // This field is optional.
-    // Each dependency must either provide a `url` and `hash`, or a `path`.
-    // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
-    // Once all dependencies are fetched, `zig build` no longer requires
-    // internet connectivity.
-    .dependencies = .{
-        .libxev = .{
-            .url = "git+https://github.com/mitchellh/libxev?ref=main#b8d1d93e5c899b27abbaa7df23b496c3e6a178c7",
-            .hash = "1220612bc023c21d75234882ec9a8c6a1cbd9d642da3dfb899297f14bb5bd7b6cd78",
-        },
-        .@"zig-args" = .{
-            .url = "git+https://github.com/ikskuh/zig-args.git#03af1b6c5bfda9646a562c861055024daed5b238",
-            .hash = "1220904d2fdcd970dd0d216211d092eb3ef6da01117163cc9393ab845a1d66c029d9",
-        },
-        .@"chroma-logger" = .{
-            .url = "git+https://github.com/adia-dev/chroma-logger-zig?ref=main#6a068f73fb373d7e33e924d581678327eded62b3",
-            .hash = "1220af343d0a607e3ce6c3780fd1b9b03be5297b9ba9eb21cdb60a3bcc3c274c98b5",
-        },
-        .zzz = .{
-            .url = "git+https://github.com/mookums/zzz?ref=v0.2.0#b5b8b8342d2e49ced658573d6f68405d2b3d050a",
-            .hash = "1220dee083dbc52681643b00eab67e32f47ee4a28e41c4cf167bc03762617a218b65",
-        },
-        .tardy = .{
-            .url = "git+https://github.com/mookums/tardy?ref=v0.1.0#ae0970d6b3fa5b03625b14e142c664efe1fd7789",
-            .hash = "12207f5afee3b8933c1c32737e8feedc80a2e4feebe058739509094c812e4a8d2cc8",
-        },
-    },
+    .fingerprint = 0x291b24c020bd1ac3,
     .paths = .{
         "build.zig",
         "build.zig.zon",
         "src",
-        // For example...
-        //"LICENSE",
-        //"README.md",
+        "libraries",
+        "common",
+    },
+    .dependencies = .{
+        .chroma_logger = .{
+            .url = "git+https://github.com/adia-dev/chroma-logger-zig?ref=main#d55715c6f49af5f9a7116dcf8e87da98f218e0de",
+            .hash = "chroma_logger-0.2.0-J85sybW_BADed4pB3cz6UgdF5vLgG67BbzWNO2iKxmgB",
+        },
+        .zap = .{
+            .path = "zig-pkg/zap-0.10.6-GoeB8y-IJAD3m9zkAkeTQalzU1NuvO072u8hA78Irdp8",
+        },
+        .pg = .{
+            .url = "git+https://github.com/karlseguin/pg.zig?ref=master#b5a1f25acb8d8008c6b15eb68386e16e624c34f7",
+            .hash = "pg-0.0.0-Wp_7gRG3BgAm5MLwpcVvT6I_ChqlK_6xiZLLJo8kTywl",
+        },
     },
 }
