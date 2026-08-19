@@ -153,8 +153,11 @@ pub const Processor = struct {
         var dir = try Directory.load(self.allocator, self.config.input_dir);
         defer dir.deinit();
 
+        const cwd = try fs.realpathAlloc(self.allocator, ".");
+        defer self.allocator.free(cwd);
+
         const asset_base = if (self.config.asset_root) |root|
-            try fs.path.resolve(self.allocator, &.{root})
+            fs.realpathAlloc(self.allocator, root) catch try fs.path.resolve(self.allocator, &.{ cwd, root })
         else
             try self.allocator.dupe(u8, dir.root_path);
         defer self.allocator.free(asset_base);
@@ -166,7 +169,7 @@ pub const Processor = struct {
             const rel = relativePath(dir.root_path, file.path) orelse continue;
             if (!matchesAny(file.path, &doc_extensions)) continue;
             if (isHidden(rel)) continue;
-            try self.processFile(asset_base, file.path, rel, &referenced);
+            try self.processFile(cwd, asset_base, file.path, rel, &referenced);
         }
 
         if (self.config.prune_orphans) try self.pruneOrphans(&referenced);
@@ -176,6 +179,7 @@ pub const Processor = struct {
 
     fn processFile(
         self: *Processor,
+        cwd: []const u8,
         asset_base: []const u8,
         abs_md: []const u8,
         rel_md: []const u8,
@@ -188,7 +192,8 @@ pub const Processor = struct {
         defer scan_arena.deinit();
         const refs = try scanRefs(scan_arena.allocator(), content);
 
-        const md_dir = fs.path.dirname(rel_md) orelse "";
+        const md_dir = fs.path.dirname(abs_md) orelse cwd;
+        const source_md_dir = sourceMarkdownDir(scan_arena.allocator(), asset_base, rel_md);
 
         var out: zstd.ArrayList(u8) = .empty;
         defer out.deinit(self.allocator);
@@ -198,12 +203,16 @@ pub const Processor = struct {
             if (!isLocal(ref.url)) continue;
             if (!self.matchesExtension(ref.url)) continue;
 
-            const abs_asset = fs.path.resolve(
+            const abs_asset = resolveAssetPath(
                 scan_arena.allocator(),
-                &.{ asset_base, md_dir, ref.url },
+                source_md_dir,
+                md_dir,
+                asset_base,
+                cwd,
+                ref.url,
             ) catch continue;
 
-            const key = fs.path.relative(self.arena.allocator(), asset_base, null, asset_base, abs_asset) catch continue;
+            const key = try assetKey(self.arena.allocator(), cwd, asset_base, abs_asset);
 
             const bytes = fs.cwd().readFileAlloc(self.allocator, abs_asset, max_asset_bytes) catch |err| switch (err) {
                 error.FileNotFound => {
@@ -391,6 +400,72 @@ pub const Processor = struct {
         return matchesAny(url, self.config.included_extensions);
     }
 };
+
+/// Directory of the original markdown file under `asset_root`. Image then video
+/// processors chain over a staging tree; `../` media paths must still resolve
+/// against the source post, not `packed/staging/…`.
+fn sourceMarkdownDir(allocator: zstd.mem.Allocator, asset_base: []const u8, rel_md: []const u8) []const u8 {
+    const rel_dir = fs.path.dirname(rel_md) orelse return asset_base;
+    return fs.path.resolve(allocator, &.{ asset_base, rel_dir }) catch return asset_base;
+}
+
+/// Resolve a local media URL against the source markdown directory first, then
+/// the file being rewritten (staging), then `asset_root`, then the process cwd.
+/// That last fallback is how repo-root paths like `blobs/cover.jpeg` work from
+/// nested posts. Missing files still return the first candidate so the caller
+/// can warn.
+fn resolveAssetPath(
+    allocator: zstd.mem.Allocator,
+    source_md_dir: []const u8,
+    md_dir: []const u8,
+    asset_base: []const u8,
+    cwd: []const u8,
+    url: []const u8,
+) ![]u8 {
+    const bases = [_][]const u8{ source_md_dir, md_dir, asset_base, cwd };
+    var fallback: ?[]u8 = null;
+    errdefer if (fallback) |path| allocator.free(path);
+
+    for (bases) |base| {
+        if (base.len == 0) continue;
+        const candidate = try fs.path.resolve(allocator, &.{ base, url });
+        if (assetExists(candidate)) {
+            if (fallback) |path| allocator.free(path);
+            return candidate;
+        }
+        if (fallback == null) {
+            fallback = candidate;
+        } else {
+            allocator.free(candidate);
+        }
+    }
+    return fallback orelse error.FileNotFound;
+}
+
+fn assetExists(path: []const u8) bool {
+    _ = fs.cwd().statFile(path) catch return false;
+    return true;
+}
+
+/// Linkage key relative to `asset_base`, or to cwd when the file lives outside
+/// the blog tree (e.g. `blobs/cover.jpeg`).
+fn assetKey(
+    allocator: zstd.mem.Allocator,
+    cwd: []const u8,
+    asset_base: []const u8,
+    abs_asset: []const u8,
+) ![]u8 {
+    const from_base = try fs.path.relative(allocator, cwd, null, asset_base, abs_asset);
+    if (!isOutsideRoot(from_base)) return from_base;
+    allocator.free(from_base);
+    return fs.path.relative(allocator, cwd, null, cwd, abs_asset);
+}
+
+fn isOutsideRoot(rel: []const u8) bool {
+    return zstd.mem.eql(u8, rel, "..") or
+        zstd.mem.startsWith(u8, rel, "../") or
+        zstd.mem.startsWith(u8, rel, "..\\");
+}
 
 /// Extract every markdown image/link and `<img>/<video>/<source>` HTML tag as a
 /// `Ref`. Locality and extension filtering happen in the caller so both
@@ -761,6 +836,52 @@ test "matchesAny is case-insensitive on extension" {
     try testing.expect(!matchesAny("c.mp4", &image_extensions));
     try testing.expect(matchesAny("clip.MP4", &video_extensions));
     try testing.expect(!matchesAny("d.png", &video_extensions));
+}
+
+test "resolveAssetPath finds nested-post and repo-root blob images" {
+    const allocator = testing.allocator;
+
+    const cwd = fs.realpathAlloc(allocator, ".") catch return error.SkipZigTest;
+    defer allocator.free(cwd);
+
+    const blob = try fs.path.join(allocator, &.{ cwd, "blobs/replication-and-versioning.jpeg" });
+    defer allocator.free(blob);
+    if (!assetExists(blob)) return error.SkipZigTest;
+
+    const md_dir = try fs.path.join(allocator, &.{ cwd, "pages/blog/hashnode" });
+    defer allocator.free(md_dir);
+    const asset_base = try fs.path.join(allocator, &.{ cwd, "pages" });
+    defer allocator.free(asset_base);
+
+    {
+        const found = try resolveAssetPath(allocator, md_dir, md_dir, asset_base, cwd, "../../../blobs/replication-and-versioning.jpeg");
+        defer allocator.free(found);
+        try testing.expect(zstd.mem.endsWith(u8, found, "blobs/replication-and-versioning.jpeg"));
+    }
+    {
+        const found = try resolveAssetPath(allocator, md_dir, md_dir, asset_base, cwd, "blobs/replication-and-versioning.jpeg");
+        defer allocator.free(found);
+        try testing.expect(zstd.mem.endsWith(u8, found, "blobs/replication-and-versioning.jpeg"));
+    }
+    {
+        const staging_md_dir = try fs.path.join(allocator, &.{ cwd, "packed/staging/blog/hashnode" });
+        defer allocator.free(staging_md_dir);
+        const found = try resolveAssetPath(
+            allocator,
+            md_dir,
+            staging_md_dir,
+            asset_base,
+            cwd,
+            "../../../blobs/replication-and-versioning.jpeg",
+        );
+        defer allocator.free(found);
+        try testing.expect(zstd.mem.endsWith(u8, found, "blobs/replication-and-versioning.jpeg"));
+        try testing.expect(zstd.mem.indexOf(u8, found, "packed") == null);
+    }
+
+    const key = try assetKey(allocator, cwd, asset_base, blob);
+    defer allocator.free(key);
+    try testing.expectEqualStrings("blobs/replication-and-versioning.jpeg", key);
 }
 
 test "linkage json round-trips through disk" {
