@@ -4,6 +4,7 @@ export type Messages = {
     github: string
     community: string
     console: string
+    sponsors: string
   }
   sidebar: {
     pagesBlog: string

@@ -6,6 +6,7 @@ export const fr: Messages = {
     github: 'GITHUB',
     community: 'COMMUNAUTÉ',
     console: 'Console',
+    sponsors: 'Sponsors',
   },
   sidebar: {
     pagesBlog: '/ pages/blog',

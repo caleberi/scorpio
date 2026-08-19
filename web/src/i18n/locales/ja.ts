@@ -6,6 +6,7 @@ export const ja: Messages = {
     github: 'GITHUB',
     community: 'コミュニティ',
     console: 'コンソール',
+    sponsors: 'スポンサー',
   },
   sidebar: {
     pagesBlog: '/ pages/blog',

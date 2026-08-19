@@ -6,6 +6,7 @@ export const de: Messages = {
     github: 'GITHUB',
     community: 'COMMUNITY',
     console: 'Konsole',
+    sponsors: 'Sponsoren',
   },
   sidebar: {
     pagesBlog: '/ pages/blog',
