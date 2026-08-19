@@ -71,6 +71,16 @@ const ParamList = struct {
 
 const FilePart = struct { filename: []const u8, bytes: []const u8 };
 
+/// Cloudinary blocks some extensions (`.bin`, `.exe`, …) even on `resource_type=raw`.
+const blocked_upload_ext = ".bin";
+const raw_upload_ext = ".dat";
+
+fn rewriteBlockedExt(name: []const u8, buf: []u8) []const u8 {
+    if (!zstd.mem.endsWith(u8, name, blocked_upload_ext)) return name;
+    const stem = name[0 .. name.len - blocked_upload_ext.len];
+    return zstd.fmt.bufPrint(buf, "{s}{s}", .{ stem, raw_upload_ext }) catch name;
+}
+
 /// The resource returned by upload and rename. Parsed leniently; Cloudinary
 /// returns many more fields than we model.
 pub const Resource = struct {
@@ -158,11 +168,17 @@ pub const Cloudinary = struct {
     ) !zstd.json.Parsed(Resource) {
         var buf: [5]Param = undefined;
         var params: ParamList = .{ .buf = &buf };
-        params.addOpt("public_id", opts.public_id);
+
+        var pid_buf: [zstd.fs.max_path_bytes]u8 = undefined;
+        const public_id = if (opts.public_id) |pid| rewriteBlockedExt(pid, &pid_buf) else null;
+        params.addOpt("public_id", public_id);
         params.addOpt("folder", opts.folder);
         params.addOpt("tags", opts.tags);
         params.addBool("overwrite", opts.overwrite);
         params.addBool("invalidate", opts.invalidate);
+
+        var name_buf: [zstd.fs.max_path_bytes]u8 = undefined;
+        const upload_name = rewriteBlockedExt(filename, &name_buf);
 
         return self.request(
             Resource,
@@ -170,7 +186,7 @@ pub const Cloudinary = struct {
             opts.resource_type,
             params.items(),
             .{
-                .filename = filename,
+                .filename = upload_name,
                 .bytes = bytes,
             },
         );
@@ -595,6 +611,19 @@ test "multipart body frames fields and a file part" {
     try testing.expect(zstd.mem.indexOf(u8, body.items, "name=\"file\"; filename=\"chunk_0000.bin\"") != null);
     try testing.expect(zstd.mem.indexOf(u8, body.items, "RAWDATA") != null);
     try testing.expect(zstd.mem.endsWith(u8, body.items, "--\r\n"));
+}
+
+test "rewriteBlockedExt maps .bin to .dat and leaves other names" {
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings(
+        "chunk_0000.dat",
+        rewriteBlockedExt("chunk_0000.bin", &buf),
+    );
+    try testing.expectEqualStrings(
+        "scorpio/blog/packed/chunk_0000.dat",
+        rewriteBlockedExt("scorpio/blog/packed/chunk_0000.bin", &buf),
+    );
+    try testing.expectEqualStrings("manifest.json", rewriteBlockedExt("manifest.json", &buf));
 }
 
 // Live end-to-end smoke test. Skipped by default (requires process.Init env wiring).
