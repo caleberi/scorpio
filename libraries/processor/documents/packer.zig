@@ -19,7 +19,7 @@ const max_document_bytes: usize = 256 * 1024 * 1024;
 pub const Config = struct {
     output_dir: []const u8,
     chunk_basename: []const u8 = "chunk",
-    packing_extension: []const u8 = ".bin",
+    packing_extension: []const u8 = ".dat",
     manifest_name: []const u8 = "manifest.json",
 
     max_chunk_size: usize = 4 * 1024 * 1024,
@@ -115,7 +115,7 @@ pub const Packer = struct {
         const planned = try self.selectAndDiff();
         defer self.freePayloads(planned);
 
-        if (self.prev != null and self.shouldCompact(planned)) {
+        if (self.prev != null and (self.shouldCompact(planned) or self.prevExtensionMismatch())) {
             try self.compact(planned);
         } else {
             try self.emitIncremental(planned);
@@ -208,6 +208,17 @@ pub const Packer = struct {
             }
         }
         self.allocator.free(planned);
+    }
+
+    /// Force a full rewrite when leftover chunks use a different packing
+    /// extension (e.g. `.bin` → `.dat` after a Cloudinary-safe rename).
+    fn prevExtensionMismatch(self: *Packer) bool {
+        const prev = &(self.prev orelse return false);
+        for (prev.data.chunks) |chunk| {
+            if (!zstd.mem.endsWith(u8, chunk.file, self.config.packing_extension))
+                return true;
+        }
+        return false;
     }
 
     /// Estimate the dead-byte ratio across surviving previous chunks. A chunk
@@ -751,7 +762,7 @@ test "compaction renumbers chunks and drops dead files" {
     var count: usize = 0;
     var it = out_dir.iterate();
     while (try it.next()) |entry| {
-        if (zstd.mem.endsWith(u8, entry.name, ".bin")) count += 1;
+        if (zstd.mem.endsWith(u8, entry.name, ".dat")) count += 1;
     }
     try testing.expectEqual(@as(usize, 2), count);
 

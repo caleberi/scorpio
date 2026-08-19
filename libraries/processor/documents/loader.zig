@@ -62,7 +62,6 @@ pub const Directory = struct {
         defer root_dir.close();
 
         const root_stat = try root_dir.stat();
-
         var folders: zstd.ArrayList(Folder) = .empty;
         errdefer {
             for (folders.items) |*folder| folder.deinit(allocator);
