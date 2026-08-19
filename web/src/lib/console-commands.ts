@@ -1,4 +1,9 @@
-import { isThemeName, THEME_NAMES } from '@/lib/highlight'
+import {
+  formatThemeList,
+  isThemeName,
+  normalizeThemeName,
+  THEME_NAMES,
+} from '@/lib/highlight'
 import { musicPlayer, TRACKS } from '@/lib/music'
 
 export type ConsoleContext = {
@@ -20,8 +25,8 @@ const HELP_LINES = [
   '  help              Show this help',
   '  ls                List packed blog paths',
   '  open <slug|path>  Open a post',
-  '  theme list        List themes / highlight colors',
-  '  theme set <name>  Set theme (light|alt|paper|amber|mint|violet|coral|sky)',
+  '  theme list        List light and dark themes',
+  '  theme set <name>  Set theme (light, dark, dark mint, …)',
   '  music list        List background tracks',
   '  music play [name] Play ambient music (default: ambient)',
   '  music pause|resume|stop',
@@ -29,6 +34,9 @@ const HELP_LINES = [
   '  music status',
   '  clear             Clear scrollback',
   '  close             Close the console',
+  'Keys',
+  '  ↑ / ↓             History and matching completions',
+  '  → / tab           Accept ghost completion',
 ]
 
 export function runConsoleCommand(
@@ -57,19 +65,19 @@ export function runConsoleCommand(
     case 'theme': {
       switch (rest[0]) {
         case 'list':
-          return { lines: [ctx.listThemes()] }
+          return { lines: ctx.listThemes().split('\n') }
         case 'set': {
-          const name = rest[1]
+          const name = normalizeThemeName(rest.slice(1).join(' '))
           if (!name) return { lines: ['Usage: theme set <name>'] }
-          if (!isThemeName(name.toLowerCase())) {
+          if (!isThemeName(name)) {
             return {
               lines: [
-                `Error: unknown theme "${name}"`,
-                `Themes: ${THEME_NAMES.join(', ')}`,
+                `Error: unknown theme "${rest.slice(1).join(' ')}"`,
+                ...formatThemeList(),
               ],
             }
           }
-          return { lines: [ctx.setTheme(name.toLowerCase())] }
+          return { lines: [ctx.setTheme(name)] }
         }
         default:
           return { lines: ['Usage: theme list | theme set <name>'] }
@@ -118,4 +126,86 @@ async function handleMusic(rest: string[]): Promise<ConsoleResult> {
 
 export function initialHelp(): string[] {
   return HELP_LINES
+}
+
+const STATIC_COMMANDS = [
+  'help',
+  'ls',
+  'open',
+  'theme',
+  'theme list',
+  'theme set',
+  ...THEME_NAMES.map((name) => `theme set ${name}`),
+  'music',
+  'music list',
+  'music play',
+  ...TRACKS.map((track) => `music play ${track.id}`),
+  'music pause',
+  'music resume',
+  'music stop',
+  'music volume',
+  'music status',
+  'clear',
+  'close',
+]
+
+function consoleCatalog(openTargets: string[]): string[] {
+  return [
+    ...STATIC_COMMANDS,
+    ...openTargets.map((target) => `open ${target}`),
+  ]
+}
+
+/** Newest matching history first, then unused catalog completions. */
+export function consoleNavItems(
+  prefix: string,
+  history: string[],
+  openTargets: string[],
+): string[] {
+  const lower = prefix.toLowerCase()
+  const seen = new Set<string>()
+  const items: string[] = []
+
+  const push = (value: string) => {
+    const key = value.toLowerCase()
+    if (seen.has(key)) return
+    if (prefix && !key.startsWith(lower)) return
+    seen.add(key)
+    items.push(value)
+  }
+
+  for (let i = history.length - 1; i >= 0; i--) {
+    push(history[i])
+  }
+
+  if (prefix) {
+    for (const command of consoleCatalog(openTargets)) {
+      push(command)
+    }
+  }
+
+  return items
+}
+
+export function consoleSuggestion(
+  input: string,
+  history: string[],
+  openTargets: string[],
+): string | null {
+  if (!input) return null
+  return (
+    consoleNavItems(input, history, openTargets).find(
+      (item) => item.length > input.length,
+    ) ?? null
+  )
+}
+
+export function suggestionRemainder(
+  input: string,
+  suggestion: string | null,
+): string {
+  if (!suggestion) return ''
+  if (suggestion.length <= input.length) return ''
+  if (!suggestion.toLowerCase().startsWith(input.toLowerCase())) return ''
+  return suggestion.slice(input.length)
 }

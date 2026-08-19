@@ -22,6 +22,7 @@ import {
   THEME_CLASS_NAMES,
 } from '@/lib/constants'
 import { errorMessage } from '@/lib/errors'
+import { isDarkTheme, isThemeName } from '@/lib/highlight'
 
 type ConsoleState = 'open' | 'minimized' | 'closed'
 
@@ -55,7 +56,8 @@ function readStoredConsole(): ConsoleState {
 }
 
 function readStoredTheme(): string {
-  return localStorage.getItem(STORAGE_KEYS.theme) ?? DEFAULT_THEME
+  const stored = localStorage.getItem(STORAGE_KEYS.theme)
+  return stored && isThemeName(stored) ? stored : DEFAULT_THEME
 }
 
 function readStoredLocale(): Locale {
@@ -123,6 +125,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       root.classList.remove(name)
     }
     root.classList.add(`theme-${theme}`)
+    root.dataset.themeMode = isDarkTheme(theme) ? 'dark' : 'light'
   }, [theme])
 
   useEffect(() => {

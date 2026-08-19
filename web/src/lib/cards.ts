@@ -2,8 +2,10 @@ import type { BlogDocument, BlogListing } from '@/lib/api'
 import { EXCERPT_MAX_CHARS } from '@/lib/constants'
 import {
   categoriesFromPath,
+  coverMedia,
   firstHeading,
   parseFrontmatter,
+  type CoverMedia,
 } from '@/lib/frontmatter'
 
 export type CardData = {
@@ -11,6 +13,7 @@ export type CardData = {
   title: string
   excerpt: string
   tags: string[]
+  cover?: CoverMedia
 }
 
 export function listingToCard(
@@ -41,5 +44,6 @@ export function listingToCard(
     tags:
       parsed.data.topics?.map((t) => t.toUpperCase()) ??
       categoriesFromPath(doc.path),
+    cover: coverMedia(parsed.data.image),
   }
 }

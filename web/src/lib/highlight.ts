@@ -10,7 +10,7 @@ export const HIGHLIGHT_COLORS = {
 
 export type HighlightName = keyof typeof HIGHLIGHT_COLORS
 
-export const THEME_NAMES = [
+export const LIGHT_THEME_NAMES = [
   'light',
   'alt',
   'paper',
@@ -21,7 +21,25 @@ export const THEME_NAMES = [
   'sky',
 ] as const
 
+export const DARK_THEME_NAMES = [
+  'dark',
+  'dark-alt',
+  'dark-paper',
+  'dark-amber',
+  'dark-mint',
+  'dark-violet',
+  'dark-coral',
+  'dark-sky',
+] as const
+
+export const THEME_NAMES = [
+  ...LIGHT_THEME_NAMES,
+  ...DARK_THEME_NAMES,
+] as const
+
 export type ThemeName = (typeof THEME_NAMES)[number]
+export type LightThemeName = (typeof LIGHT_THEME_NAMES)[number]
+export type DarkThemeName = (typeof DARK_THEME_NAMES)[number]
 
 /** Theme → default title highlight */
 export const THEME_HIGHLIGHT: Record<ThemeName, HighlightName> = {
@@ -33,10 +51,34 @@ export const THEME_HIGHLIGHT: Record<ThemeName, HighlightName> = {
   violet: 'violet',
   coral: 'coral',
   sky: 'sky',
+  dark: 'lime',
+  'dark-alt': 'orange',
+  'dark-paper': 'amber',
+  'dark-amber': 'amber',
+  'dark-mint': 'mint',
+  'dark-violet': 'violet',
+  'dark-coral': 'coral',
+  'dark-sky': 'sky',
 }
 
 export function isThemeName(name: string): name is ThemeName {
   return (THEME_NAMES as readonly string[]).includes(name)
+}
+
+export function isDarkTheme(name: string): name is DarkThemeName {
+  return (DARK_THEME_NAMES as readonly string[]).includes(name)
+}
+
+/** `dark mint` / `dark-mint` → canonical theme id. */
+export function normalizeThemeName(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\s+/g, '-')
+}
+
+export function formatThemeList(): string[] {
+  return [
+    `Light: ${LIGHT_THEME_NAMES.join(', ')}`,
+    `Dark:  ${DARK_THEME_NAMES.join(', ')}`,
+  ]
 }
 
 export function isHighlightName(name: string): name is HighlightName {
