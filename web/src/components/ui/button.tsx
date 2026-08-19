@@ -10,9 +10,9 @@ const buttonVariants = cva(
       variant: {
         default: 'bg-ink text-ground hover:bg-ink/90',
         outline:
-          'border border-ink bg-transparent hover:bg-black/[0.03]',
-        ghost: 'hover:bg-black/[0.04]',
-        pill: 'rounded-full border border-ink bg-surface px-4 py-2 hover:bg-black/[0.03]',
+          'border border-ink bg-transparent hover:bg-ink/[0.06]',
+        ghost: 'hover:bg-ink/[0.06]',
+        pill: 'rounded-full border border-ink bg-surface px-4 py-2 hover:bg-ink/[0.06]',
       },
       size: {
         default: 'h-9 px-4 py-2',
