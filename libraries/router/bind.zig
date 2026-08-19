@@ -62,7 +62,9 @@ pub const RequestContext = struct {
 
         var path_it = path_params.iterator();
         while (path_it.next()) |entry| {
-            try ctx.put(entry.key_ptr.*, entry.value_ptr.*);
+            const text = try entry.value_ptr.toString(allocator);
+            defer allocator.free(text);
+            try ctx.put(entry.key_ptr.*, text);
         }
 
         request.parseQuery();
@@ -193,5 +195,8 @@ test "bind missing required field" {
     defer ctx.deinit();
 
     const Inputs = struct { name: []const u8 };
-    try testing.expectError(error.MissingField, bind(Inputs, &ctx));
+    try testing.expectError(
+        error.MissingField,
+        bind(Inputs, &ctx),
+    );
 }

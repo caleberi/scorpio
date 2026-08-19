@@ -35,12 +35,7 @@ pub const Router = struct {
         self.* = undefined;
     }
 
-    pub fn register(
-        self: *Router,
-        method: Method,
-        pattern: []const u8,
-        comptime Def: type,
-    ) !void {
+    pub fn register(self: *Router, method: Method, pattern: []const u8, comptime Def: type) !void {
         const handler = struct {
             fn handle(
                 allocator: Allocator,

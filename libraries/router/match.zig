@@ -3,7 +3,80 @@ const zap = @import("zap");
 const testing = std.testing;
 
 pub const Method = zap.http.Method;
-pub const PathParams = std.StringHashMapUnmanaged([]const u8);
+
+pub const Value = union(enum) {
+    int: i64,
+    float: f64,
+    string: []const u8,
+    array: []const Value,
+
+    pub fn deinit(self: Value, allocator: std.mem.Allocator) void {
+        switch (self) {
+            .int, .float => {},
+            .string => |s| allocator.free(s),
+            .array => |items| {
+                for (items) |item| item.deinit(allocator);
+                allocator.free(items);
+            },
+        }
+    }
+
+    /// Parse a single path segment into the tightest matching variant.
+    pub fn parse(allocator: std.mem.Allocator, text: []const u8) !Value {
+        if (std.fmt.parseInt(i64, text, 10)) |i| {
+            return .{ .int = i };
+        } else |_| {}
+
+        if (looksLikeFloat(text)) {
+            if (std.fmt.parseFloat(f64, text)) |f| {
+                return .{ .float = f };
+            } else |_| {}
+        }
+
+        return .{ .string = try allocator.dupe(u8, text) };
+    }
+
+    pub fn fromSegments(allocator: std.mem.Allocator, segs: []const []const u8) !Value {
+        const items = try allocator.alloc(Value, segs.len);
+        var filled: usize = 0;
+        errdefer {
+            for (items[0..filled]) |item| item.deinit(allocator);
+            allocator.free(items);
+        }
+        for (segs, 0..) |seg, i| {
+            items[i] = try parse(allocator, seg);
+            filled += 1;
+        }
+        return .{ .array = items };
+    }
+
+    pub fn toString(self: Value, allocator: std.mem.Allocator) ![]u8 {
+        switch (self) {
+            .int => |i| return std.fmt.allocPrint(allocator, "{d}", .{i}),
+            .float => |f| return std.fmt.allocPrint(allocator, "{d}", .{f}),
+            .string => |s| return allocator.dupe(u8, s),
+            .array => |items| {
+                var list: std.ArrayList(u8) = .empty;
+                errdefer list.deinit(allocator);
+                for (items, 0..) |item, i| {
+                    if (i > 0) try list.append(allocator, '/');
+                    const piece = try item.toString(allocator);
+                    defer allocator.free(piece);
+                    try list.appendSlice(allocator, piece);
+                }
+                return try list.toOwnedSlice(allocator);
+            },
+        }
+    }
+};
+
+pub const PathParams = std.StringHashMapUnmanaged(Value);
+
+fn looksLikeFloat(text: []const u8) bool {
+    return std.mem.indexOfScalar(u8, text, '.') != null or
+        std.mem.indexOfScalar(u8, text, 'e') != null or
+        std.mem.indexOfScalar(u8, text, 'E') != null;
+}
 
 pub fn methodFromRequest(method: ?[]const u8) Method {
     return zap.http.methodToEnum(method);
@@ -13,15 +86,10 @@ pub fn methodFromRequest(method: ?[]const u8) Method {
 /// On success, fills `params` with owned path-parameter values
 /// (caller frees via `freePathParams`).
 ///
-/// A splat param (`*name`) captures one or more path segments. If the pattern
-/// continues after the splat, those trailing segments are matched from the end
-/// of the remaining path (e.g. `/blog/*slug/comments` → slug = `guides/intro`).
-pub fn matchPath(
-    allocator: std.mem.Allocator,
-    pattern: []const u8,
-    path: []const u8,
-    params: *PathParams,
-) !bool {
+/// A splat param (`*name`) captures one or more path segments as `.array`.
+/// If the pattern continues after the splat, those trailing segments are matched
+/// from the end of the remaining path (e.g. `/blog/*slug/comments`).
+pub fn matchPath(allocator: std.mem.Allocator, pattern: []const u8, path: []const u8, params: *PathParams) !bool {
     clearPathParams(allocator, params);
 
     var pattern_parts = std.mem.splitScalar(u8, trimSlashes(pattern), '/');
@@ -74,9 +142,7 @@ pub fn matchPath(
                         clearPathParams(allocator, params);
                         return false;
                     }
-                    const value = try allocator.dupe(u8, seg);
-                    errdefer allocator.free(value);
-                    try params.put(allocator, pname, value);
+                    try putParam(allocator, params, pname, seg);
                 } else if (after_pat.len > 0 and after_pat[0] == '*') {
                     // Nested splats after a splat are not supported.
                     clearPathParams(allocator, params);
@@ -87,8 +153,8 @@ pub fn matchPath(
                 }
             }
 
-            const rest = try joinSegments(allocator, remaining.items[0..splat_end]);
-            errdefer allocator.free(rest);
+            const rest = try Value.fromSegments(allocator, remaining.items[0..splat_end]);
+            errdefer rest.deinit(allocator);
             try params.put(allocator, name, rest);
             return true;
         }
@@ -105,9 +171,7 @@ pub fn matchPath(
                 clearPathParams(allocator, params);
                 return false;
             }
-            const value = try allocator.dupe(u8, seg.?);
-            errdefer allocator.free(value);
-            try params.put(allocator, name, value);
+            try putParam(allocator, params, name, seg.?);
         } else if (!std.mem.eql(u8, pat.?, seg.?)) {
             clearPathParams(allocator, params);
             return false;
@@ -115,15 +179,10 @@ pub fn matchPath(
     }
 }
 
-fn joinSegments(allocator: std.mem.Allocator, segs: []const []const u8) ![]u8 {
-    var list: std.ArrayList(u8) = .empty;
-    errdefer list.deinit(allocator);
-
-    for (segs, 0..) |seg, i| {
-        if (i > 0) try list.append(allocator, '/');
-        try list.appendSlice(allocator, seg);
-    }
-    return try list.toOwnedSlice(allocator);
+fn putParam(allocator: std.mem.Allocator, params: *PathParams, name: []const u8, text: []const u8) !void {
+    const value = try Value.parse(allocator, text);
+    errdefer value.deinit(allocator);
+    try params.put(allocator, name, value);
 }
 
 pub fn freePathParams(allocator: std.mem.Allocator, params: *PathParams) void {
@@ -134,7 +193,7 @@ pub fn freePathParams(allocator: std.mem.Allocator, params: *PathParams) void {
 fn clearPathParams(allocator: std.mem.Allocator, params: *PathParams) void {
     var it = params.iterator();
     while (it.next()) |entry| {
-        allocator.free(entry.value_ptr.*);
+        entry.value_ptr.deinit(allocator);
     }
     params.clearRetainingCapacity();
 }
@@ -159,10 +218,17 @@ test "match path params" {
     var params: PathParams = .{};
     defer freePathParams(testing.allocator, &params);
     try testing.expect(try matchPath(testing.allocator, "/users/:id", "/users/42", &params));
-    try testing.expectEqualStrings("42", params.get("id").?);
+    try testing.expectEqual(@as(i64, 42), params.get("id").?.int);
     try testing.expect(try matchPath(testing.allocator, "/users/:id/posts/:postId", "/users/7/posts/9", &params));
-    try testing.expectEqualStrings("7", params.get("id").?);
-    try testing.expectEqualStrings("9", params.get("postId").?);
+    try testing.expectEqual(@as(i64, 7), params.get("id").?.int);
+    try testing.expectEqual(@as(i64, 9), params.get("postId").?.int);
+}
+
+test "match float path params" {
+    var params: PathParams = .{};
+    defer freePathParams(testing.allocator, &params);
+    try testing.expect(try matchPath(testing.allocator, "/n/:x", "/n/3.14", &params));
+    try testing.expectEqual(@as(f64, 3.14), params.get("x").?.float);
 }
 
 test "match splat path params" {
@@ -170,10 +236,13 @@ test "match splat path params" {
     defer freePathParams(testing.allocator, &params);
 
     try testing.expect(try matchPath(testing.allocator, "/blog/*slug", "/blog/sample", &params));
-    try testing.expectEqualStrings("sample", params.get("slug").?);
+    try testing.expectEqual(@as(usize, 1), params.get("slug").?.array.len);
+    try testing.expectEqualStrings("sample", params.get("slug").?.array[0].string);
 
     try testing.expect(try matchPath(testing.allocator, "/blog/*slug", "/blog/guides/foo", &params));
-    try testing.expectEqualStrings("guides/foo", params.get("slug").?);
+    try testing.expectEqual(@as(usize, 2), params.get("slug").?.array.len);
+    try testing.expectEqualStrings("guides", params.get("slug").?.array[0].string);
+    try testing.expectEqualStrings("foo", params.get("slug").?.array[1].string);
 
     try testing.expect(!try matchPath(testing.allocator, "/blog/*slug", "/blog", &params));
     try testing.expect(!try matchPath(testing.allocator, "/blog/*slug", "/other/x", &params));
@@ -189,7 +258,9 @@ test "match splat with trailing segments" {
         "/blog/guides/intro/comments",
         &params,
     ));
-    try testing.expectEqualStrings("guides/intro", params.get("slug").?);
+    try testing.expectEqual(@as(usize, 2), params.get("slug").?.array.len);
+    try testing.expectEqualStrings("guides", params.get("slug").?.array[0].string);
+    try testing.expectEqualStrings("intro", params.get("slug").?.array[1].string);
 
     try testing.expect(try matchPath(
         testing.allocator,
@@ -197,9 +268,11 @@ test "match splat with trailing segments" {
         "/blog/a/b/comments/c1/replies/r1",
         &params,
     ));
-    try testing.expectEqualStrings("a/b", params.get("slug").?);
-    try testing.expectEqualStrings("c1", params.get("comment_id").?);
-    try testing.expectEqualStrings("r1", params.get("reply_id").?);
+    try testing.expectEqual(@as(usize, 2), params.get("slug").?.array.len);
+    try testing.expectEqualStrings("a", params.get("slug").?.array[0].string);
+    try testing.expectEqualStrings("b", params.get("slug").?.array[1].string);
+    try testing.expectEqualStrings("c1", params.get("comment_id").?.string);
+    try testing.expectEqualStrings("r1", params.get("reply_id").?.string);
 
     try testing.expect(!try matchPath(
         testing.allocator,

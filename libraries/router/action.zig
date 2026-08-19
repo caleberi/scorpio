@@ -1,14 +1,10 @@
 const zstd = @import("std");
 const zap = @import("zap");
+const common = @import("common");
 const bind = @import("bind.zig");
 const testing = zstd.testing;
 
-pub const ResponseType = enum {
-    json,
-    text,
-    redirect,
-    empty,
-};
+pub const ResponseType = enum { json, text, redirect, empty };
 
 pub const ExitMeta = struct {
     status: zap.http.StatusCode = .ok,
@@ -31,7 +27,9 @@ pub const Capture = struct {
 };
 
 pub fn Exits(comptime Def: type) type {
+    // Def must have an Exit enum and a run function
     const Exit = Def.Exit;
+
     return struct {
         const Self = @This();
 
@@ -60,7 +58,11 @@ pub fn Exits(comptime Def: type) type {
             self.sent = true;
 
             const meta = comptime Def.exitMeta(exit);
-            const body = try renderPayload(self.allocator, meta.response_type, payload);
+            const body = try renderPayload(
+                self.allocator,
+                meta.response_type,
+                payload,
+            );
             defer self.allocator.free(body);
 
             if (self.capture) |cap| {
