@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useRouterState } from '@tanstack/react-router'
 import { ArticleCard } from '@/components/ArticleCard'
+import { LangIconField } from '@/components/LangIconField'
 import { LocaleSelect } from '@/components/LocaleSelect'
 import { useDocumentCards } from '@/hooks/useDocumentCards'
 import { useApp } from '@/lib/app-context'
@@ -28,8 +29,9 @@ export function Footer() {
   ]
 
   return (
-    <footer className="border-t border-ink/30 bg-ground">
-      <div className="mx-auto max-w-[1400px] px-4 py-10 md:px-6">
+    <footer className="relative overflow-hidden border-t border-ink/30 bg-ground">
+      <LangIconField />
+      <div className="relative z-10 mx-auto max-w-[1400px] px-4 py-10 md:px-6">
         <div className="section-label grid-plus border-b border-ink/25 pb-4">
           {t.footer.related}
         </div>
@@ -43,6 +45,7 @@ export function Footer() {
                 excerpt={card.excerpt}
                 tags={card.tags}
                 figure={i + 1}
+                cover={card.cover}
               />
             </div>
           ))}

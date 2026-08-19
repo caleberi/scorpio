@@ -1,29 +1,34 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import mermaid from 'mermaid'
+import { useApp } from '@/lib/app-context'
+import { isDarkTheme } from '@/lib/highlight'
 
-let mermaidReady = false
+let mermaidMode: 'light' | 'dark' | null = null
 
-function ensureMermaid() {
-  if (mermaidReady) return
+function ensureMermaid(dark: boolean) {
+  const mode = dark ? 'dark' : 'light'
+  if (mermaidMode === mode) return
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: 'loose',
-    theme: 'neutral',
+    theme: dark ? 'dark' : 'neutral',
     fontFamily: 'IBM Plex Mono, ui-monospace, monospace',
   })
-  mermaidReady = true
+  mermaidMode = mode
 }
 
 export function MermaidDiagram({ chart }: { chart: string }) {
+  const { theme } = useApp()
+  const dark = isDarkTheme(theme)
   const reactId = useId().replace(/:/g, '')
-  const renderId = `mermaid-${reactId}`
+  const renderId = `mermaid-${reactId}-${dark ? 'd' : 'l'}`
   const containerRef = useRef<HTMLDivElement>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     async function render() {
-      ensureMermaid()
+      ensureMermaid(dark)
       setError(null)
       const rendered = await mermaid
         .render(renderId, chart.trim())
@@ -41,7 +46,7 @@ export function MermaidDiagram({ chart }: { chart: string }) {
     return () => {
       cancelled = true
     }
-  }, [chart, renderId])
+  }, [chart, renderId, dark])
 
   if (error) {
     return (

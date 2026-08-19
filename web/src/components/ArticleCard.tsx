@@ -1,7 +1,29 @@
+import type { CSSProperties } from 'react'
 import { Link } from '@tanstack/react-router'
+import { CoverMediaView } from '@/components/CoverMedia'
 import { Badge } from '@/components/ui/badge'
 import { interpolate } from '@/i18n'
 import { useApp } from '@/lib/app-context'
+import type { CoverMedia } from '@/lib/frontmatter'
+
+const TAG_FILLS = [
+  'var(--color-highlight)',
+  'var(--color-accent)',
+  'color-mix(in srgb, var(--color-highlight) 62%, var(--color-accent))',
+  'color-mix(in srgb, var(--color-accent) 48%, var(--color-ground))',
+] as const
+
+function tagStyle(tag: string, index: number): CSSProperties {
+  let hash = 0
+  for (let i = 0; i < tag.length; i++) hash = (hash * 33 + tag.charCodeAt(i)) >>> 0
+  const tone = hash % TAG_FILLS.length
+  const tilt = ((hash % 7) - 3) * 0.55
+  return {
+    '--tag-fill': TAG_FILLS[tone],
+    '--tag-tilt': `${tilt}deg`,
+    '--tag-delay': `${index * 90}ms`,
+  } as CSSProperties
+}
 
 export function ArticleCard({
   slug,
@@ -9,12 +31,14 @@ export function ArticleCard({
   excerpt,
   tags,
   figure,
+  cover,
 }: {
   slug: string
   title: string
   excerpt: string
   tags: string[]
   figure: number
+  cover?: CoverMedia
 }) {
   const { t } = useApp()
 
@@ -33,20 +57,26 @@ export function ArticleCard({
             {interpolate(t.article.figure, { n: figure })}
           </span>
         </div>
-        <div className="flex h-28 items-center justify-center bg-[linear-gradient(135deg,#eee_25%,transparent_25%),linear-gradient(225deg,#eee_25%,transparent_25%),linear-gradient(45deg,#eee_25%,transparent_25%),linear-gradient(315deg,#eee_25%,#f7f7f7_25%)] bg-[length:12px_12px]">
-          <div className="h-10 w-16 border border-ink/50" />
+        <div className="article-card-check flex h-28 items-center justify-center overflow-hidden">
+          {cover ? (
+            <CoverMediaView media={cover} className="h-full w-full object-cover" />
+          ) : (
+            <div className="h-10 w-16 border border-ink/50" />
+          )}
         </div>
       </div>
 
       <div className="min-w-0">
-        <h3 className="text-2xl font-bold tracking-tight group-hover:underline underline-offset-4">
+        <h3 className="text-2xl font-semibold tracking-tight group-hover:underline underline-offset-4">
           {title}
         </h3>
         <p className="mt-2 text-base leading-relaxed text-ink/80">{excerpt}</p>
         {tags.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {tags.map((tag) => (
-              <Badge key={tag}>{tag}</Badge>
+            {tags.map((tag, i) => (
+              <Badge key={tag} className="article-tag" style={tagStyle(tag, i)}>
+                {tag}
+              </Badge>
             ))}
           </div>
         )}

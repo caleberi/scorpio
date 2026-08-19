@@ -56,7 +56,9 @@ export function PostMetadata({
           </div>
           <div className="flex gap-3 border-b border-ink/15 pb-2">
             <dt className="w-28 shrink-0 text-muted">{t.metadata.author}</dt>
-            <dd className="uppercase">{author}</dd>
+            <dd>
+              <Badge>{author}</Badge>
+            </dd>
           </div>
           <div className="flex gap-3 border-b border-ink/15 pb-2">
             <dt className="w-28 shrink-0 text-muted">{t.metadata.readingTime}</dt>
@@ -77,11 +79,12 @@ export function PostMetadata({
 
       <div>
         <div className="section-label mb-2">{t.metadata.agents}</div>
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="pill"
-            className="w-full justify-start"
+            size="sm"
+            className="min-w-0 flex-1 justify-center"
             onClick={() => void copyForLlm()}
           >
             <FileText className="h-4 w-4" />
@@ -90,9 +93,11 @@ export function PostMetadata({
           <Button
             type="button"
             variant="pill"
-            className="w-full justify-start"
+            size="sm"
+            className="min-w-0 flex-1 justify-center"
             onClick={onViewMarkdown}
           >
+            <FileText className="h-4 w-4" />
             {t.metadata.viewMarkdown}
           </Button>
         </div>

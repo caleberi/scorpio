@@ -1,15 +1,57 @@
-import { useEffect, useRef, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { interpolate } from '@/i18n'
 import { useApp } from '@/lib/app-context'
 import {
+  consoleNavItems,
+  consoleSuggestion,
   initialHelp,
   runConsoleCommand,
+  suggestionRemainder,
 } from '@/lib/console-commands'
-import { THEME_NAMES } from '@/lib/highlight'
+import {
+  CONSOLE_HISTORY_LIMIT,
+  STORAGE_KEYS,
+} from '@/lib/constants'
+import { formatThemeList } from '@/lib/highlight'
 import { cn } from '@/lib/utils'
 
 type Line = { kind: 'in' | 'out'; text: string }
+
+type HistoryNav = {
+  prefix: string
+  draft: string
+  index: number
+  items: string[]
+}
+
+function readConsoleHistory(): string[] {
+  if (typeof window === 'undefined') return []
+  const raw = localStorage.getItem(STORAGE_KEYS.consoleHistory)
+  if (!raw) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((item): item is string => typeof item === 'string' && item.length > 0)
+      .slice(-CONSOLE_HISTORY_LIMIT)
+  } catch {
+    return []
+  }
+}
+
+function persistConsoleHistory(history: string[]) {
+  localStorage.setItem(
+    STORAGE_KEYS.consoleHistory,
+    JSON.stringify(history.slice(-CONSOLE_HISTORY_LIMIT)),
+  )
+}
 
 export function Console() {
   const {
@@ -25,8 +67,26 @@ export function Console() {
     initialHelp().map((text) => ({ kind: 'out', text })),
   )
   const [input, setInput] = useState('')
+  const [history, setHistory] = useState<string[]>(readConsoleHistory)
+  const [nav, setNav] = useState<HistoryNav | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const openTargets = useMemo(() => {
+    const seen = new Set<string>()
+    const targets: string[] = []
+    for (const doc of documents) {
+      for (const target of [doc.path, doc.slug]) {
+        if (seen.has(target)) continue
+        seen.add(target)
+        targets.push(target)
+      }
+    }
+    return targets
+  }, [documents])
+  const suggestion = nav
+    ? null
+    : consoleSuggestion(input, history, openTargets)
+  const remainder = suggestionRemainder(input, suggestion)
 
   useEffect(() => {
     if (consoleState === 'open') {
@@ -54,7 +114,7 @@ export function Console() {
         void navigate({ to: '/posts/$', params: { _splat: match.slug } })
         return `Opening ${match.path}`
       },
-      listThemes: () => `Themes: ${THEME_NAMES.join(', ')}`,
+      listThemes: () => formatThemeList().join('\n'),
       setTheme: (name) => {
         const n = name.toLowerCase()
         setTheme(n)
@@ -76,6 +136,76 @@ export function Console() {
 
     if (result.close) {
       window.setTimeout(() => setConsoleState('closed'), 200)
+    }
+  }
+
+  const pushHistory = (command: string) => {
+    const trimmed = command.trim()
+    if (!trimmed) return
+    setHistory((prev) => {
+      const next =
+        prev.at(-1) === trimmed ? prev : [...prev, trimmed]
+      const capped = next.slice(-CONSOLE_HISTORY_LIMIT)
+      persistConsoleHistory(capped)
+      return capped
+    })
+    setNav(null)
+  }
+
+  const acceptSuggestion = () => {
+    if (!suggestion) return
+    setInput(suggestion)
+    setNav(null)
+  }
+
+  const moveHistory = (direction: 1 | -1) => {
+    const current = nav ?? {
+      prefix: input,
+      draft: input,
+      index: -1,
+      items: consoleNavItems(input, history, openTargets),
+    }
+    if (!current.items.length) return
+    const nextIndex = current.index + direction
+    if (nextIndex < -1 || nextIndex >= current.items.length) return
+    if (nextIndex === -1) {
+      setInput(current.draft)
+      setNav(null)
+      return
+    }
+    setNav({ ...current, index: nextIndex })
+    setInput(current.items[nextIndex])
+  }
+
+  const onInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    switch (e.key) {
+      case 'ArrowUp':
+        e.preventDefault()
+        moveHistory(1)
+        break
+      case 'ArrowDown':
+        e.preventDefault()
+        moveHistory(-1)
+        break
+      case 'ArrowRight': {
+        const node = e.currentTarget
+        const atEnd =
+          node.selectionStart === input.length &&
+          node.selectionEnd === input.length
+        if (atEnd && remainder) {
+          e.preventDefault()
+          acceptSuggestion()
+        }
+        break
+      }
+      case 'Tab':
+        if (remainder) {
+          e.preventDefault()
+          acceptSuggestion()
+        }
+        break
+      default:
+        break
     }
   }
 
@@ -109,7 +239,7 @@ export function Console() {
               <button
                 type="button"
                 aria-label={t.console.minimize}
-                className="px-1.5 font-mono text-sm leading-none hover:bg-black/10"
+                className="px-1.5 font-mono text-sm leading-none hover:bg-ink/10"
                 onClick={() => setConsoleState('minimized')}
               >
                 −
@@ -117,7 +247,7 @@ export function Console() {
               <button
                 type="button"
                 aria-label={t.console.close}
-                className="px-1.5 font-mono text-sm leading-none hover:bg-black/10"
+                className="px-1.5 font-mono text-sm leading-none hover:bg-ink/10"
                 onClick={() => setConsoleState('closed')}
               >
                 ×
@@ -143,19 +273,36 @@ export function Console() {
                 e.preventDefault()
                 const value = input
                 setInput('')
+                setNav(null)
+                pushHistory(value)
                 void run(value)
               }}
             >
               <span className="text-accent">$</span>
-              <input
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                className="min-w-0 flex-1 bg-transparent text-white outline-none caret-transparent"
-                spellCheck={false}
-                autoComplete="off"
-                aria-label={t.console.commandAria}
-              />
+              <div className="relative min-w-0 flex-1">
+                {remainder ? (
+                  <span
+                    className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre"
+                    aria-hidden
+                  >
+                    <span className="invisible">{input}</span>
+                    <span className="text-white/30">{remainder}</span>
+                  </span>
+                ) : null}
+                <input
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => {
+                    setNav(null)
+                    setInput(e.target.value)
+                  }}
+                  onKeyDown={onInputKeyDown}
+                  className="relative w-full bg-transparent text-white outline-none caret-transparent"
+                  spellCheck={false}
+                  autoComplete="off"
+                  aria-label={t.console.commandAria}
+                />
+              </div>
               <span
                 className="inline-block h-4 w-2 animate-pulse bg-accent"
                 aria-hidden

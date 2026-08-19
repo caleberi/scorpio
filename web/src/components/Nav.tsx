@@ -62,7 +62,7 @@ export function Nav() {
           onClick={toggleConsole}
           className={cn(
             'shrink-0 border border-ink/50 bg-surface px-2.5 py-1.5 font-mono text-[13px] uppercase tracking-wide',
-            'hover:bg-black/[0.03]',
+            'hover:bg-ink/[0.06]',
           )}
         >
           <span className="text-muted">[C]</span> {t.nav.console}

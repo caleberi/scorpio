@@ -7,13 +7,18 @@ import { TREE_INDENT_PX } from '@/lib/constants'
 import { buildTree, type TreeNode } from '@/lib/tree'
 import { cn } from '@/lib/utils'
 
-export function Sidebar() {
+export function Sidebar({ className }: { className?: string }) {
   const { documents, documentsLoading, documentsError, t } = useApp()
   const tree = useMemo(() => buildTree(documents), [documents])
   const pathname = useRouterState({ select: (s) => s.location.pathname })
 
   return (
-    <aside className="hidden w-40 shrink-0 border-r border-ink/25 bg-ground md:flex md:flex-col lg:w-44">
+    <aside
+      className={cn(
+        'hidden w-40 shrink-0 self-stretch border-r border-ink/25 bg-ground md:flex md:flex-col lg:w-44',
+        className,
+      )}
+    >
       <div className="sticky top-0 flex max-h-[calc(100vh-3rem)] flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <div className="section-label mb-3">{t.sidebar.pagesBlog}</div>
@@ -24,7 +29,7 @@ export function Sidebar() {
             <p className="font-mono text-sm text-red-700">{documentsError}</p>
           )}
           {!documentsLoading && !documentsError && (
-            <ul className="space-y-0.5 font-mono text-[13px]">
+            <ul className="space-y-0.5 font-mono text-[15px]">
               {tree.map((node) => (
                 <TreeItem key={node.path} node={node} activePath={pathname} />
               ))}
@@ -56,7 +61,7 @@ function TreeItem({
         <li>
           <button
             type="button"
-            className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-black/[0.04]"
+            className="flex w-full items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-ink/[0.06]"
             style={indent}
             onClick={() => setOpen((v) => !v)}
           >
@@ -89,7 +94,7 @@ function TreeItem({
             to="/posts/$"
             params={{ _splat: node.slug }}
             className={cn(
-              'flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-black/[0.04]',
+              'flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-ink/[0.06]',
               active && 'bg-accent/40',
             )}
             style={indent}
