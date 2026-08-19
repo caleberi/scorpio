@@ -987,7 +987,7 @@ test "complex environment configuration with validation" {
         \\FIREBASE_MEASUREMENT_ID=G-ABCDEFGHIJ
         \\FIREBASE_APP_NAME=[DEFAULT]
         \\
-        \\SLACK_BOT_TOKEN=xoxb-xxxxxxxxxx
+        \\SLACK_BOT_TOKEN=xxxxxxxxxx
         \\SLACK_API_URL=https://slack.com/api
         \\SLACK_USERNAME=CircleMarketBot
         \\SLACK_ICON_EMOJI=:robot_face:
@@ -1000,7 +1000,7 @@ test "complex environment configuration with validation" {
         \\
         \\SMS_PROVIDER_NAME=twilio
         \\SMS_BASE_URL=https://api.twilio.com/2010-04-01
-        \\SMS_TOKEN=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        \\SMS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     ;
 
     const tmp_dir = zstd.testing.tmpDir(.{});
