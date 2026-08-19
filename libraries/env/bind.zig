@@ -17,11 +17,7 @@ fn joinKey(comptime prefix: []const u8, comptime name: []const u8) []const u8 {
     return prefix ++ "_" ++ name;
 }
 
-fn makePrefixedKey(
-    allocator: zstd.mem.Allocator,
-    prefix: ?[]const u8,
-    name: []const u8,
-) ![]u8 {
+fn makePrefixedKey(allocator: zstd.mem.Allocator, prefix: ?[]const u8, name: []const u8) ![]u8 {
     if (prefix) |p|
         return try zstd.fmt.allocPrint(allocator, "{s}_{s}", .{ p, name });
     return try allocator.dupe(u8, name);
@@ -29,6 +25,7 @@ fn makePrefixedKey(
 
 fn fieldTypeByName(comptime T: type, comptime name: []const u8) type {
     inline for (@typeInfo(T).@"struct".fields) |field| {
+        @setEvalBranchQuota(10000);
         if (comptime zstd.mem.eql(u8, field.name, name))
             return field.type;
     }
@@ -37,14 +34,16 @@ fn fieldTypeByName(comptime T: type, comptime name: []const u8) type {
 
 fn fieldInfoByName(comptime T: type, comptime name: []const u8) zstd.builtin.Type.StructField {
     inline for (@typeInfo(T).@"struct".fields) |field| {
-        if (comptime zstd.mem.eql(u8, field.name, name)) return field;
+        if (comptime zstd.mem.eql(u8, field.name, name))
+            return field;
     }
     @compileError("field not found: " ++ name);
 }
 
 fn isNestedStructPtr(comptime T: type) bool {
     const type_info = @typeInfo(T);
-    if (type_info != .pointer or type_info.pointer.size != .one) return false;
+    if (type_info != .pointer or type_info.pointer.size != .one)
+        return false;
     return @typeInfo(type_info.pointer.child) == .@"struct";
 }
 
@@ -300,7 +299,8 @@ pub fn parse(
     prefix: ?[]const u8,
     env: zstd.process.Environ.Map,
 ) !*T {
-    if (@typeInfo(T) != .@"struct") return ParseError.InvalidContainer;
+    if (@typeInfo(T) != .@"struct")
+        return ParseError.InvalidContainer;
 
     const Plan = FieldPlan(T);
     const container = try allocator.create(T);
