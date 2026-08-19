@@ -987,7 +987,7 @@ test "complex environment configuration with validation" {
         \\FIREBASE_MEASUREMENT_ID=G-ABCDEFGHIJ
         \\FIREBASE_APP_NAME=[DEFAULT]
         \\
-        \\SLACK_BOT_TOKEN=xoxb-1234567890-1234567890123-abcdefghijklmnopqrstuvwx
+        \\SLACK_BOT_TOKEN=xoxb-xxxxxxxxxx
         \\SLACK_API_URL=https://slack.com/api
         \\SLACK_USERNAME=CircleMarketBot
         \\SLACK_ICON_EMOJI=:robot_face:
