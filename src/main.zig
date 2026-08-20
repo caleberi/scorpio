@@ -1,253 +1,116 @@
-const std = @import("std");
-const clib = @cImport({
-    @cInclude("signal.h");
-    @cInclude("unistd.h");
-});
-
-const pprof = @cImport({
-    if (clib.DD_PROF) {
-        @cInclude("dd_profiling.h");
-    }
-});
-const zzz = @import("zzz");
-const tardy = @import("tardy");
-const http = std.http;
-const zhttp = zzz.HTTP;
-const Tardy = tardy.Tardy(.auto);
-const Runtime = tardy.Runtime;
-
-const Server = zhttp.Server(.plain);
-const Router = Server.Router;
-const Context = Server.Context;
-const Route = Server.Route;
-
-const ArgsParser = @import("args");
-const Agent = @import("./ddog/internals/agent.zig");
+const zstd = @import("std");
+const zap = @import("zap");
+const libraries = @import("libraries");
+const fs = libraries.fs;
+const pg = @import("pg");
 const chroma_logger = @import("chroma");
-const BatchWriter = @import("./ddog/internals/batcher.zig").BatchWriter;
-const handlers = @import("handlers.zig");
-const Features = @import("./ddog/features/index.zig");
-const assert = std.debug.assert;
-const time = std.time;
-const scorpio_log = std.log.scoped(.scorpio);
-pub const std_options = .{
+
+const config_mod = @import("app/config.zig");
+const state_mod = @import("app/state.zig");
+const BlogCache = @import("app/blog/cache.zig").BlogCache;
+const BlogDb = @import("app/blog/db.zig").BlogDb;
+const actions = @import("app/actions/root.zig");
+
+const Manifest = libraries.processor.documents.manifest.Manifest;
+const Cloudinary = libraries.uploader.cloudinary.Cloudinary;
+const Router = libraries.router.Router;
+
+pub const std_options: zstd.Options = .{
     .log_level = .debug,
-    .logFn = appLogFn,
-};
-var running = std.atomic.Value(bool).init(true);
-
-pub const Args = struct {
-    file: ?[]const u8 = "",
-    @"error-log": ?[]const u8 = "",
-
-    pub fn format(
-        self: Args,
-        comptime _: []const u8,
-        _: std.fmt.FormatOptions,
-        writer: anytype,
-    ) !void {
-        const fmt_str: []const u8 = "Args [.file = '{s}', .error-log = '{s}']";
-        _ = try writer.print(fmt_str, .{ self.file orelse "", self.@"error-log" orelse "" });
-    }
+    .logFn = chroma_logger.Logger(.{}).log,
 };
 
-const EntryParams = struct {
-    config: *std.process.EnvMap,
-    router: *Router,
-};
+pub fn main(init: zstd.process.Init) !void {
+    const allocator = init.gpa;
+    const io = init.io;
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{
-        .thread_safe = true,
-        .verbose_log = true,
-    }){};
-    const allocator = gpa.allocator();
-    defer {
-        if (gpa.deinit() != .ok) {
-            _ = gpa.detectLeaks();
-        }
-    }
+    var loaded = try config_mod.load(allocator, ".env");
+    defer loaded.deinit();
 
-    const args = try ArgsParser.parseForCurrentProcess(Args, allocator, .silent);
-    defer args.deinit();
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    var env_map = try load_environment(allocator, args.options.file.?);
-    defer env_map.deinit();
+    const cfg = loaded.config;
+    const uri = try zstd.Uri.parse(cfg.db.url);
 
-    const api_key = env_map.get("DD_API_KEY").?;
-    const api_site = env_map.get("DD_SITE").?;
-
-    const ddog = try allocator.create(Agent.DdogClient);
-    defer allocator.destroy(ddog);
-    ddog.* = try Agent.DdogClient.init(allocator, api_key, api_site);
-    defer ddog.deinit();
-
-    var tracer = try allocator.create(BatchWriter);
-    defer allocator.destroy(tracer);
-    tracer.* = try BatchWriter.init(allocator, "traces.batch");
-    defer tracer.deinit();
-    var tracer_thd = try backgroundBatcher(
-        tracer,
+    var pool = try pg.Pool.initUri(
+        io,
         allocator,
+        uri,
+        .{ .size = 5 },
     );
-    defer allocator.destroy(tracer_thd);
+    defer pool.deinit();
 
-    var logger = try allocator.create(BatchWriter);
-    defer allocator.destroy(logger);
-    logger.* = try BatchWriter.init(allocator, "logs.batch");
-    defer logger.deinit();
-    var logger_thd = try backgroundBatcher(
-        logger,
-        allocator,
-    );
-    defer allocator.destroy(logger_thd);
+    var pack_dir = try fs.cwd().openDir(cfg.blog.pack_dir, .{});
+    defer pack_dir.close();
 
-    var metric = try allocator.create(BatchWriter);
-    defer allocator.destroy(logger);
-    metric.* = try BatchWriter.init(allocator, "metrics.batch");
-    defer logger.deinit();
-    var metric_thd = try backgroundBatcher(
-        metric,
-        allocator,
-    );
-    defer allocator.destroy(metric_thd);
-
-    var loop = try Tardy.init(.{
+    var app_state: state_mod.State = .{
         .allocator = allocator,
-        .threading = .auto,
+        .io = io,
+        .config = cfg,
+        .manifest = Manifest.load(
+            allocator,
+            pack_dir,
+            "manifest.json",
+        ) catch |err| {
+            zstd.log.err("failed to load packed manifest from {s}: {}", .{ cfg.blog.pack_dir, err });
+            zstd.log.err("run `zig build pack` before starting the server", .{});
+            return err;
+        },
+        .cloud = Cloudinary.init(
+            allocator,
+            io,
+            cfg.cloudinary.cloudname,
+            cfg.cloudinary.api_key,
+            cfg.cloudinary.api_secret,
+        ),
+        .cache = undefined,
+        .db = BlogDb.init(pool),
+    };
+    defer app_state.manifest.deinit();
+    defer app_state.cloud.deinit();
+
+    app_state.cache = BlogCache.init(
+        allocator,
+        io,
+        &app_state.cloud,
+        cfg.cloudinary.pack_prefix,
+        cfg.blog.pack_dir,
+        &app_state.manifest,
+    );
+    defer app_state.cache.deinit();
+
+    state_mod.set(&app_state);
+
+    var app_router = Router.init(allocator);
+    defer app_router.deinit();
+
+    try app_router.register(.GET, "/hello", libraries.router.actions.hello.Hello);
+    try app_router.register(.GET, "/hello/:name", libraries.router.actions.hello.Hello);
+
+    try app_router.register(.GET, "/blog", actions.blogs.List);
+    // Comment routes before document splat so /blog/*slug/comments wins over /blog/*slug.
+    try app_router.register(.GET, "/blog/*slug/comments", actions.comments.List);
+    try app_router.register(.POST, "/blog/*slug/comments", actions.comments.Create);
+    try app_router.register(.PUT, "/blog/*slug/comments/:comment_id", actions.comments.Update);
+    try app_router.register(.DELETE, "/blog/*slug/comments/:comment_id", actions.comments.Delete);
+    try app_router.register(.POST, "/blog/*slug/comments/:comment_id/replies", actions.replies.Create);
+    try app_router.register(.PUT, "/blog/*slug/comments/:comment_id/replies/:reply_id", actions.replies.Update);
+    try app_router.register(.DELETE, "/blog/*slug/comments/:comment_id/replies/:reply_id", actions.replies.Delete);
+    try app_router.register(.GET, "/blog/*slug", actions.blogs.Get);
+
+    const port: u16 = @intCast(cfg.server.port);
+    var listener = zap.HttpListener.init(.{
+        .port = port,
+        .on_request = app_router.onRequestHandler(),
+        .log = true,
     });
-
-    var router = Router.init(allocator);
-    defer router.deinit();
-
-    var deps = handlers.Dependencies{
-        .ddog = ddog,
-        .tracer = tracer,
-        .env = env_map,
-        .logger = logger,
-        .metric = metric,
+    listener.listen() catch |err| {
+        zstd.log.err("failed to listen on port {d}: {}", .{ port, err });
+        zstd.log.err("is another scorpio instance already running?", .{});
+        return err;
     };
 
-    try router.serve_route("/logs", Route.init().post(&deps, handlers.logHandler));
-    try router.serve_route("/traces", Route.init().post(&deps, handlers.traceHandler));
-    try router.serve_route("/metric", Route.init().post(&deps, handlers.metricHandler));
-
-    _ = try std.Thread.spawn(.{}, struct {
-        fn run(td: *Tardy, _router: *Router, config: *std.process.EnvMap) !void {
-            var params = EntryParams{
-                .router = _router,
-                .config = config,
-            };
-            try td.entry(&params, entry, {}, exit);
-        }
-    }.run, .{ &loop, &router, &env_map });
-
-    if (@import("config").@"os-tag" == .linux) {
-        _ = clib.ddprof_start_profiling();
-        defer clib.ddprof_stop_profiling(5000);
-    }
-
-    _ = clib.signal(clib.SIGINT, signalHandler);
-
-    while (running.load(.acquire)) {}
-
-    tracer.shutdown();
-    logger.shutdown();
-    metric.shutdown();
-
-    tracer_thd.join();
-    logger_thd.join();
-    metric_thd.join();
-
-    loop.deinit();
-    std.process.exit(0);
-}
-
-fn appLogFn(
-    comptime level: std.log.Level,
-    comptime scope: @Type(.EnumLiteral),
-    comptime format: []const u8,
-    args: anytype,
-) void {
-    // if (scope != .scorpio) return;
-    return chroma_logger.timeBasedLog(level, scope, format, args);
-}
-
-fn signalHandler(sig: c_int) callconv(.C) void {
-    _ = sig;
-    running.store(false, .release);
-    scorpio_log.warn("Received shutdown signal, stopping server...", .{});
-}
-
-fn load_environment(allocator: std.mem.Allocator, filepath: []const u8) !std.process.EnvMap {
-    assert(!std.mem.eql(u8, filepath, ""));
-    var filename: []const u8 = undefined;
-    var dirname: []const u8 = undefined;
-
-    var i: usize = filepath.len - 1;
-    while (i > 0) : (i -= 1) {
-        if (filepath[i] != '/') continue;
-
-        filename = filepath[i + 1 .. filepath.len];
-        dirname = filepath[0..i];
-        break;
-    }
-
-    var env = try std.process.getEnvMap(allocator);
-    var dir = try std.fs.openDirAbsolute(dirname, .{ .access_sub_paths = false });
-    defer dir.close();
-    const file_sz = try dir.statFile(filename);
-    const content: []u8 = try dir.readFileAlloc(allocator, filename, file_sz.size);
-    defer allocator.free(content);
-    var lines = std.mem.split(u8, content, "\n");
-    while (lines.next()) |line| {
-        if (line.len == 0) continue;
-        var components = std.mem.split(u8, line, "=");
-        const key = std.mem.trim(u8, components.next().?, " ");
-        const value = std.mem.trim(u8, components.next().?, " ");
-        if (!std.mem.eql(u8, key, "")) {
-            try env.put(key, value);
-        }
-    }
-    return env;
-}
-
-pub fn backgroundBatcher(batch_writer: anytype, allocator: std.mem.Allocator) !*std.Thread {
-    const thread = try allocator.create(std.Thread);
-    thread.* = try std.Thread.spawn(.{}, struct {
-        fn run(b: anytype) !void {
-            if (std.meta.hasMethod(@TypeOf(b), "run")) {
-                try b.run();
-                return;
-            }
-            @panic("cannot start a batcher without run method");
-        }
-    }.run, .{
-        batch_writer,
+    zstd.log.info("scorpio listening on http://127.0.0.1:{d}/blog", .{port});
+    zap.start(.{
+        .threads = cfg.server.threads,
+        .workers = cfg.server.workers,
     });
-    return thread;
-}
-
-fn entry(rt: *Runtime, ep: *EntryParams) !void {
-    const thread_count = @max(@as(u16, @intCast(try std.Thread.getCpuCount() / 2 - 1)), 1);
-    const connection_per_thread = try std.math.divCeil(u16, 2500, thread_count);
-
-    var server = Server.init(.{
-        .allocator = rt.allocator,
-        .size_connections_max = connection_per_thread,
-        .size_socket_buffer = 10240,
-        .size_recv_buffer_max = 10240,
-        .size_recv_buffer_retain = 10240,
-        .size_request_max = 10240,
-    });
-
-    const port = std.fmt.parseInt(u16, ep.config.get("APP_PORT").?, 10) catch 9090;
-    const host = ep.config.get("APP_HOST").?;
-    try server.bind(host, @intCast(port));
-    try server.serve(ep.router, rt);
-}
-
-fn exit(rt: *Runtime, _: void) !void {
-    try Server.clean(rt);
 }
