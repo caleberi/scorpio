@@ -1,151 +1,21 @@
-// ============================================================================
-// Design Overview: Compile-Time Type-Safe Validation Orchestrator
-// ============================================================================
-//
-// This module implements the high-level validation orchestration layer that
-// ties together lexing, parsing, and validation execution to provide a
-// seamless, type-safe validation experience for Zig structs.
-//
-// Key Design Decisions:
-// ---------------------
-// 1. **Compile-Time Type Specialization**: Uses comptime generics to create
-//    specialized validators for each struct type, enabling type-safe field
-//    access and compile-time verification.
-//
-// 2. **Documentation-Driven Validation**: Extracts validation rules from
-//    struct documentation (doc/documentation fields), keeping validation
-//    metadata close to type definitions without runtime overhead.
-//
-// 3. **Full Pipeline Integration**: Orchestrates the complete validation flow:
-//    Documentation → Lexing → Parsing → Validation → Error Reporting
-//
-// 4. **Nested Struct Support**: Recursively validates nested structs by
-//    detecting struct fields with their own documentation and creating
-//    sub-validators with inherited validator registrations.
-//
-// 5. **Flexible Documentation Sources**: Supports both embedded documentation
-//    (struct decl fields) and external validation specifications passed at
-//    runtime, enabling different validation contexts.
-//
-// 6. **Automatic Type Conversion**: Converts struct field values to strings
-//    for validation, handling ints, floats, bools, and string slices with
-//    appropriate formatting.
-//
-// Architecture Flow:
-// ------------------
-// 1. Create Validator(T) instance for struct type T
-// 2. Register built-in and/or custom validators
-// 3. Call validate(struct_instance, optional_source)
-// 4. Validator extracts documentation (from struct or parameter)
-// 5. Lexer tokenizes validation syntax
-// 6. Parser generates validation specifications
-// 7. For each field:
-//    - Convert field value to string
-//    - Look up validation spec by field name
-//    - Execute validators with parameters
-//    - Apply custom error messages
-//    - Report failures or continue
-// 8. Recursively validate nested structs
-//
-// Documentation Format:
-// ---------------------
-// Structs define validation rules in a `doc` or `documentation` field:
-// ```zig
-// const User = struct {
-//     const doc =
-//         \\// @validation
-//         \\// @property: name
-//         \\//   @validator: @alpha,@min_length=3
-//         \\//   @messages:
-//         \\//     alpha - "Name must be alphabetic"
-//     ;
-//     name: []const u8,
-// };
-// ```
-//
-// Nested Validation:
-// ------------------
-// When a struct field is itself a struct with documentation, the validator:
-// 1. Detects the nested struct type
-// 2. Creates a new sub-validator with a temporary allocator
-// 3. Copies parent validator registrations to child
-// 4. Recursively validates the nested instance
-// 5. Cleans up the sub-validator
-//
-// This enables deep validation of complex object graphs while maintaining
-// isolation between validation contexts.
-//
-// Memory Management:
-// ------------------
-// - Validator owns the validation engine
-// - Creates temporary copies of field values for validation
-// - Clones validator/message registries for nested validation
-// - Uses defer blocks extensively to prevent leaks
-// - Nested validators use isolated allocators (GeneralPurposeAllocator)
-//
-// Extension Points:
-// -----------------
-// - registerCustomValidator(): Add domain-specific validators
-// - registerCustomMessage(): Override default error messages
-// - External documentation: Provide validation specs separate from type
-//
-// Error Handling:
-// ---------------
-// - Returns errors for missing documentation, invalid containers
-// - Prints validation failures with field name and custom message
-// - Returns ValidationFailed error on first validation failure
-//
-// Performance Characteristics:
-// ----------------------------
-// - Documentation parsing: O(n) where n is doc length
-// - Field validation: O(f * v) where f=fields, v=validators per field
-// - Nested validation: Recursive with depth proportional to nesting level
-// - Type conversion overhead: Minimal buffered formatting
-//
-// Usage Pattern:
-// --------------
-// ```zig
-// var validator = try Validator(User).init(allocator);
-// defer validator.deinit();
-// try validator.registerValidators();
-// try validator.registerMessages();
-// try validator.validate(user_instance, null);
-// ```
-//
-// ============================================================================
-
 const zstd = @import("std");
 const fs = @import("compat_fs.zig");
 const lexer = @import("validation/lexer.zig");
 const parser = @import("validation/parser.zig");
 const engine = @import("validation/engine.zig");
 const defaults = @import("validation/default.zig");
-const EnvironmentParser = @import("env/loader.zig").EnvironmentParser;
+const env = @import("env/loader.zig");
+const EnvironmentParser = env.EnvironmentParser;
 const clib = @cImport({
     @cInclude("regex.h");
 });
 
-/// Creates a type-specialized validator for struct type T.
-///
-/// This is a type factory function that returns a validator instance
-/// capable of validating values of type T using documentation-defined rules.
-///
-/// The validator integrates lexer, parser, and validation engine to provide
-/// a complete validation pipeline from documentation to execution.
-///
-/// Type Parameter:
-/// - T: The struct type to validate (must have validation documentation)
 pub fn Validator(comptime T: type) type {
     return struct {
-        /// Allocator for validator operations
         allocator: zstd.mem.Allocator,
-        /// Validation engine instance (manages validators and execution)
+
         engine: engine.Engine,
 
-        /// Initializes a new validator for type T.
-        ///
-        /// Creates an empty validation engine. Call registerValidators()
-        /// and registerMessages() to populate with built-in validators.
         pub fn init(allocator: zstd.mem.Allocator) !Validator(T) {
             const e = try engine.Engine.init(allocator);
             return .{
@@ -154,25 +24,10 @@ pub fn Validator(comptime T: type) type {
             };
         }
 
-        /// Cleans up validator resources.
-        ///
-        /// Frees the underlying validation engine and all registered
-        /// validator names and messages.
         pub fn deinit(self: *Validator(T)) void {
             self.engine.deinit();
         }
 
-        /// Registers all built-in validators with the engine.
-        ///
-        /// Adds standard validators:
-        /// - alpha: Alphabetic characters only
-        /// - numeric: Integer validation
-        /// - min_length/max_length: String length constraints
-        /// - min/max: Numeric range constraints
-        /// - required: Non-empty validation
-        /// - email: Basic email format validation
-        ///
-        /// Call this after init() to enable standard validation rules.
         pub fn registerValidators(self: *Validator(T)) !void {
             try self.engine.registerValidator("alpha", defaults.alphaValidator);
             try self.engine.registerValidator("numeric", defaults.numericValidator);
@@ -184,13 +39,6 @@ pub fn Validator(comptime T: type) type {
             try self.engine.registerValidator("email", defaults.emailValidator);
         }
 
-        /// Registers default error messages for built-in validators.
-        ///
-        /// Provides user-friendly error messages for each built-in validator.
-        /// These messages are used when no custom message is specified in
-        /// the validation documentation.
-        ///
-        /// Call this after registerValidators() to set up default messages.
         pub fn registerMessages(self: *Validator(T)) !void {
             try self.engine.registerDefaultMessage("alpha", "Field must contain only alphabetic characters");
             try self.engine.registerDefaultMessage("numeric", "Field must be numeric");
@@ -202,16 +50,6 @@ pub fn Validator(comptime T: type) type {
             try self.engine.registerDefaultMessage("email", "Invalid email format");
         }
 
-        /// Registers a custom validator function.
-        ///
-        /// Allows extending validation with domain-specific rules beyond
-        /// the built-in validators. The custom validator must match the
-        /// ValidatorFn signature.
-        ///
-        /// Example:
-        /// ```zig
-        /// try validator.registerCustomValidator("phone", phoneValidator);
-        /// ```
         pub fn registerCustomValidator(
             self: *Validator(T),
             name: []const u8,
@@ -223,15 +61,6 @@ pub fn Validator(comptime T: type) type {
             );
         }
 
-        /// Registers a custom error message for a validator.
-        ///
-        /// Overrides the default message for a specific validator,
-        /// providing more context-specific error feedback.
-        ///
-        /// Example:
-        /// ```zig
-        /// try validator.registerCustomMessage("required", "Username cannot be empty");
-        /// ```
         pub fn registerCustomMessage(
             self: *Validator(T),
             validator_name: []const u8,
@@ -243,29 +72,6 @@ pub fn Validator(comptime T: type) type {
             );
         }
 
-        /// Validates a struct instance against its documentation.
-        ///
-        /// This is the main entry point for validation. It:
-        /// 1. Extracts validation documentation from the struct type or parameter
-        /// 2. Lexes and parses the documentation into specifications
-        /// 3. Validates each field according to its specification
-        /// 4. Recursively validates nested structs
-        ///
-        /// Documentation Resolution:
-        /// - First checks for struct decl named "doc"
-        /// - Falls back to "documentation" decl
-        /// - Uses provided source parameter if available
-        /// - Returns error if no documentation found
-        ///
-        /// Args:
-        /// - container: The struct instance to validate
-        /// - source: Optional external validation specification (overrides struct doc)
-        ///
-        /// Returns: void on success
-        /// Errors:
-        /// - InvalidContainer: If container is not a struct
-        /// - MissingDocumentation: If no validation doc found
-        /// - ValidationFailed: If any field fails validation
         pub fn validate(self: *Validator(T), container: T, source: ?[]const u8) !void {
             const container_type = @TypeOf(container);
             const container_info = @typeInfo(container_type);
@@ -507,15 +313,6 @@ pub fn Validator(comptime T: type) type {
             }
         }
 
-        /// Creates a deep copy of the validator registry.
-        ///
-        /// Used when creating nested validators to inherit parent validator
-        /// registrations without sharing the same HashMap instance.
-        ///
-        /// Args:
-        /// - dest_allocator: Allocator for the new map and key copies
-        ///
-        /// Returns: New StringHashMap with duplicated keys and function pointers
         pub fn copyValidators(self: *Validator(T), dest_allocator: zstd.mem.Allocator) !zstd.StringHashMap(engine.ValidatorFn) {
             var new_map = zstd.StringHashMap(engine.ValidatorFn).init(dest_allocator);
             errdefer {
@@ -536,15 +333,6 @@ pub fn Validator(comptime T: type) type {
             return new_map;
         }
 
-        /// Creates a deep copy of the default messages registry.
-        ///
-        /// Used when creating nested validators to inherit parent message
-        /// definitions without sharing the same HashMap instance.
-        ///
-        /// Args:
-        /// - dest_allocator: Allocator for the new map, keys, and values
-        ///
-        /// Returns: New StringHashMap with duplicated keys and message strings
         pub fn copyValidatorMessage(self: *Validator(T), dest_allocator: zstd.mem.Allocator) !zstd.StringHashMap([]const u8) {
             var new_map = zstd.StringHashMap([]const u8).init(dest_allocator);
             errdefer {
