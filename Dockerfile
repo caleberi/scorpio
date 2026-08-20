@@ -116,10 +116,7 @@ ENV SERVER_PORT=9090 \
     BLOG_INPUT_DIR=pages \
     BLOG_PACK_DIR=packed/blog \
     BLOG_STAGING_DIR=packed/staging \
-    BLOG_PREFETCH_NEIGHBORS=1 \
-    DB_URL=postgresql://postgres:postgres@postgres:5432/scorpio \
-    DB_HOST=postgres \
-    DB_PORT=5432
+    BLOG_PREFETCH_NEIGHBORS=1
 
 EXPOSE 9090
 ENTRYPOINT ["/entrypoint.sh"]
