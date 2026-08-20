@@ -1,0 +1,17 @@
+.git
+.gitignore
+.DS_Store
+.env
+*.core
+
+.zig-cache
+zig-cache
+zig-out
+zig-pkg/.tmp-*
+
+web/node_modules
+web/dist
+web/.vite
+
+packed/staging
+**/.DS_Store
