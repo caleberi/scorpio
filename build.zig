@@ -206,6 +206,7 @@ pub fn build(b: *zstd.Build) !void {
     });
     pack_exe.root_module.link_libc = true;
     b.installArtifact(pack_exe);
+
     const pack_cmd = b.addRunArtifact(pack_exe);
     pack_cmd.has_side_effects = true;
     pack_cmd.setCwd(b.path("."));
@@ -223,6 +224,7 @@ pub fn build(b: *zstd.Build) !void {
     });
     prerun_exe.root_module.link_libc = true;
     b.installArtifact(prerun_exe);
+
     const prerun_cmd = b.addRunArtifact(prerun_exe);
     prerun_cmd.has_side_effects = true;
     prerun_cmd.setCwd(b.path("."));
@@ -258,7 +260,7 @@ pub fn build(b: *zstd.Build) !void {
 
     const router_unit_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("libraries/router/root.zig"),
+            .root_source_file = b.path("libraries/router_tests.zig"),
             .target = target,
             .optimize = optimize,
             .imports = &.{
