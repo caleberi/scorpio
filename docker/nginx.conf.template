@@ -1,15 +1,15 @@
 server {
-    listen 80;
+    listen ${LISTEN_PORT};
     server_name _;
     root /usr/share/nginx/html;
     gzip on;
     gzip_types text/plain text/css application/javascript application/json image/svg+xml;
 
-    # Docker DNS; variable proxy_pass so nginx does not require `api` at startup.
-    resolver 127.0.0.11 valid=10s ipv6=off;
+    # Docker Compose: 127.0.0.11. Render: nameserver from /etc/resolv.conf.
+    resolver ${NGINX_RESOLVER} valid=10s ipv6=off;
 
     location /blog {
-        set $api_upstream http://api:9090;
+        set $api_upstream ${API_UPSTREAM};
         proxy_pass $api_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
@@ -19,7 +19,7 @@ server {
     }
 
     location /hello {
-        set $api_upstream http://api:9090;
+        set $api_upstream ${API_UPSTREAM};
         proxy_pass $api_upstream;
         proxy_http_version 1.1;
         proxy_set_header Host $host;

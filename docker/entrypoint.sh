@@ -5,7 +5,7 @@ cd /app
 
 write_env() {
     cat > .env <<EOF
-SERVER_PORT=${SERVER_PORT:-9090}
+SERVER_PORT=${PORT:-${SERVER_PORT:-9090}}
 SERVER_THREADS=${SERVER_THREADS:-2}
 SERVER_WORKERS=${SERVER_WORKERS:-1}
 LOG_LEVEL=${LOG_LEVEL:-info}
@@ -21,9 +21,20 @@ DB_URL=${DB_URL:-postgresql://postgres:postgres@postgres:5432/scorpio}
 EOF
 }
 
+host_from_db_url() {
+    # postgresql://user:pass@host:port/db  or  postgresql://user:pass@host/db
+    echo "${DB_URL:-}" | sed -n 's|.*@\([^:/]*\).*|\1|p'
+}
+
+port_from_db_url() {
+    echo "${DB_URL:-}" | sed -n 's|.*@[^:]*:\([0-9][0-9]*\).*|\1|p'
+}
+
 wait_for_postgres() {
-    host="${DB_HOST:-postgres}"
-    port="${DB_PORT:-5432}"
+    host="${DB_HOST:-$(host_from_db_url)}"
+    host="${host:-postgres}"
+    port="${DB_PORT:-$(port_from_db_url)}"
+    port="${port:-5432}"
     echo "waiting for postgres at ${host}:${port}"
     i=0
     while [ "$i" -lt 60 ]; do

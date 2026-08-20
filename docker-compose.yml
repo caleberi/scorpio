@@ -47,6 +47,8 @@ services:
       context: .
       dockerfile: Dockerfile
       target: web
+    environment:
+      API_UPSTREAM: http://api:9090
     ports:
       - "8080:80"
     depends_on:

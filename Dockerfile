@@ -70,6 +70,17 @@ ENV NODE_ENV=production
 RUN npm run build
 
 
+FROM nginx:1.31.4 AS web
+
+COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY docker/nginx-env.sh /docker-entrypoint.d/18-scorpio-env.envsh
+COPY --from=web-build /web/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+
+# Last stage is the default image. Render Docker services that omit a
+# target must get scorpio, not nginx.
 FROM debian:stable-slim AS api
 
 RUN apt-get update \
@@ -106,11 +117,3 @@ ENV SERVER_PORT=9090 \
 
 EXPOSE 9090
 ENTRYPOINT ["/entrypoint.sh"]
-
-
-FROM nginx:1.31.4 AS web
-
-COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=web-build /web/dist /usr/share/nginx/html
-
-EXPOSE 80
