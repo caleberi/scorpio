@@ -55,10 +55,15 @@ FROM node:${NODE_VERSION}-bookworm-slim AS web-build
 
 WORKDIR /web
 
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
+# Render sets NODE_ENV=production; that would skip typescript/vite/@types/*.
+COPY web/package.json web/package-lock.json web/.npmrc ./
+RUN npm ci --include=dev
 
-COPY web ./
+COPY web/index.html web/tsconfig.json web/tsconfig.app.json web/tsconfig.node.json web/vite.config.ts ./
+COPY web/src ./src
+COPY web/public ./public
+
+ENV NODE_ENV=production
 RUN npm run build
 
 

@@ -9,6 +9,7 @@ zig-cache
 zig-out
 zig-pkg/.tmp-*
 
+**/node_modules
 web/node_modules
 web/dist
 web/.vite
