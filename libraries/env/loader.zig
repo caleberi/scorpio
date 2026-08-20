@@ -1,9 +1,6 @@
 const zstd = @import("std");
 const fs = @import("../compat_fs.zig");
 const bind = @import("./bind.zig");
-const clib = @cImport({
-    @cInclude("regex.h");
-});
 
 pub const EnvironmentError = error{
     InvalidTag,
@@ -72,66 +69,41 @@ fn resolve_variables(
     value: []const u8,
     environment: zstd.process.Environ.Map,
 ) ![]u8 {
-    var regex_t: clib.regex_t = undefined;
-    var matches: [2]clib.regmatch_t = undefined;
-
-    const pattern = "\\$\\{([^}]+)\\}";
-
-    const compiled = clib.regcomp(
-        &regex_t,
-        pattern,
-        clib.REG_EXTENDED,
-    );
-    defer clib.regfree(&regex_t);
-
-    if (compiled != 0) return EnvironmentError.FailedResolution;
-
     var result = try zstd.ArrayList(u8).initCapacity(allocator, value.len);
     errdefer result.deinit(allocator);
 
     var pos: usize = 0;
     while (pos < value.len) {
-        const remaining = value[pos..];
-        const remaining_z = try allocator.dupeZ(u8, remaining);
-        defer allocator.free(remaining_z);
-
-        const matched = clib.regexec(
-            &regex_t,
-            remaining_z.ptr,
-            2,
-            &matches,
-            0,
-        );
-
-        if (matched != 0) {
-            try result.appendSlice(allocator, remaining);
+        const start = zstd.mem.indexOfPos(u8, value, pos, "${") orelse {
+            try result.appendSlice(allocator, value[pos..]);
             break;
+        };
+        try result.appendSlice(allocator, value[pos..start]);
+
+        const name_start = start + 2;
+        const name_end = zstd.mem.indexOfScalarPos(u8, value, name_start, '}') orelse {
+            try result.appendSlice(allocator, value[start..]);
+            break;
+        };
+        if (name_end == name_start) {
+            try result.appendSlice(allocator, "${}");
+            pos = name_end + 1;
+            continue;
         }
 
-        const match_start = @as(usize, @intCast(matches[0].rm_so));
-        const match_end = @as(usize, @intCast(matches[0].rm_eo));
-        const var_start = @as(usize, @intCast(matches[1].rm_so));
-        const var_end = @as(usize, @intCast(matches[1].rm_eo));
-
-        if (match_start > 0) {
-            try result.appendSlice(allocator, remaining[0..match_start]);
-        }
-
-        const var_name = remaining[var_start..var_end];
+        const var_name = value[name_start..name_end];
         var uppercase_var = try allocator.alloc(u8, var_name.len);
         defer allocator.free(uppercase_var);
-
-        for (var_name, 0..) |c, i| {
-            uppercase_var[i] = zstd.ascii.toUpper(c);
+        for (var_name, 0..) |ch, i| {
+            uppercase_var[i] = zstd.ascii.toUpper(ch);
         }
 
         if (environment.get(uppercase_var)) |env_value| {
             try result.appendSlice(allocator, env_value);
         } else {
-            try result.appendSlice(allocator, remaining[match_start..match_end]);
+            try result.appendSlice(allocator, value[start .. name_end + 1]);
         }
-
-        pos += match_end;
+        pos = name_end + 1;
     }
 
     return try result.toOwnedSlice(allocator);

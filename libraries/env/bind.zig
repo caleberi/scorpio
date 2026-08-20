@@ -1,7 +1,4 @@
 const zstd = @import("std");
-const clib = @cImport({
-    @cInclude("regex.h");
-});
 
 const LeafDesc = struct {
     path: []const []const u8,
