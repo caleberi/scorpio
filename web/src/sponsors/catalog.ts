@@ -1,0 +1,30 @@
+const catalog: Record<string, { href?: string; label?: string; tone?: string }> = {
+  cudium: {
+    href: 'https://cudium.com/',
+    label: 'Cudium',
+  },
+  circlefunds: {
+    href: 'https://www.circlefunds.io/',
+    label: 'CircleFunds',
+  },
+  render: {
+    href: 'https://dashboard.render.com/',
+    label: 'Render',
+    tone: 'ink',
+  },
+  google: {
+    href: 'https://www.google.com/',
+    label: 'Google',
+  },
+  facebook: {
+    href: 'https://www.facebook.com/',
+    label: 'Facebook',
+  },
+  x: {
+    href: 'https://x.com/',
+    label: 'X',
+    tone: 'ink',
+  },
+}
+
+export default catalog

@@ -68,9 +68,6 @@ COPY web/index.html web/tsconfig.json web/tsconfig.app.json web/tsconfig.node.js
 COPY web/src ./src
 COPY web/public ./public
 
-# Root .gitignore drops *.json, so the catalog is copied in from docker/.
-COPY docker/sponsors.catalog src/sponsors/sponsors.json
-
 ENV NODE_ENV=production
 RUN npm run build
 

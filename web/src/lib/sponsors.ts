@@ -1,5 +1,5 @@
 import { FEATURES } from '@/lib/constants'
-import catalog from '@/sponsors/sponsors.json'
+import catalog from '@/sponsors/catalog'
 
 export type SponsorTone = 'brand' | 'ink'
 
