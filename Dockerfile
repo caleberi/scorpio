@@ -38,7 +38,11 @@ RUN apt-get update \
 WORKDIR /src
 
 COPY build.zig build.zig.zon ./
-RUN zig fetch --save "git+https://github.com/zigzap/zap#v0.10.6"
+COPY zig-pkg ./zig-pkg
+
+# pg.zig pulls translate-c from Codeberg over git+https. Zig's git client
+# fails there with ProtocolError; the GitHub archive is the same commit/hash.
+RUN zig fetch "https://github.com/ziglang/translate-c/archive/57c559cf581b1fcad90494eda219f98abeb155ce.tar.gz"
 
 COPY src ./src
 COPY libraries ./libraries
@@ -74,6 +78,7 @@ COPY --from=api-build /src/zig-out/bin/pack-blog /usr/local/bin/pack-blog
 COPY --from=api-build /src/zig-out/bin/prerun /usr/local/bin/prerun
 COPY docker/entrypoint.sh /entrypoint.sh
 COPY pages ./pages
+COPY blobs ./blobs
 COPY sql ./sql
 
 RUN chmod +x /entrypoint.sh \
@@ -95,7 +100,7 @@ EXPOSE 9090
 ENTRYPOINT ["/entrypoint.sh"]
 
 
-FROM nginx:1.34.1 AS web
+FROM nginx:1.31.4 AS web
 
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=web-build /web/dist /usr/share/nginx/html
