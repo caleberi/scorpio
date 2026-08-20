@@ -1,6 +1,6 @@
 <img width="1800" height="1169" alt="Screenshot 2026-08-20 at 12 22 59 PM" src="https://github.com/user-attachments/assets/f64d7664-d960-4057-b66f-180f44f51dd8" />
 
-# Scorpio
+# Hamilton
 
 A personal blog engine: Markdown on disk, packed into addressable chunks, served by a Zig HTTP API, and read in a Stripe-inspired React UI.
 
