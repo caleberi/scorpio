@@ -15,7 +15,7 @@
             .hash = "chroma_logger-0.2.0-J85sybW_BADed4pB3cz6UgdF5vLgG67BbzWNO2iKxmgB",
         },
         .zap = .{
-            .path = "zig-pkg/zap-0.10.6-GoeB8y-IJAD3m9zkAkeTQalzU1NuvO072u8hA78Irdp8",
+            .path = "vendor/zap",
         },
         .pg = .{
             .url = "git+https://github.com/karlseguin/pg.zig?ref=master#b5a1f25acb8d8008c6b15eb68386e16e624c34f7",

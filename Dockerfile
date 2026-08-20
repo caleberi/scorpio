@@ -33,12 +33,15 @@ RUN apt-get update \
     ca-certificates \
     git \
     libc6-dev \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 
 COPY build.zig build.zig.zon ./
-COPY zig-pkg ./zig-pkg
+COPY vendor/zap.zip ./vendor/zap.zip
+RUN unzip -q vendor/zap.zip -d vendor \
+    && rm -f vendor/zap.zip
 
 # pg.zig pulls translate-c from Codeberg over git+https. Zig's git client
 # fails there with ProtocolError; the GitHub archive is the same commit/hash.

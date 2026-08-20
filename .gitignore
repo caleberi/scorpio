@@ -3,6 +3,7 @@ zig-cache/
 *.core
 .zig-cache/
 zig-pkg/
+vendor/zap/
 .env
 *.bin
 *.dat
