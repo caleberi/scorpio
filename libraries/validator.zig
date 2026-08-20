@@ -6,9 +6,6 @@ const engine = @import("validation/engine.zig");
 const defaults = @import("validation/default.zig");
 const env = @import("env/loader.zig");
 const EnvironmentParser = env.EnvironmentParser;
-const clib = @cImport({
-    @cInclude("regex.h");
-});
 
 pub fn Validator(comptime T: type) type {
     return struct {
@@ -858,24 +855,16 @@ test "complex environment configuration with validation" {
             const s = ctx.value.asString() orelse {
                 return engine.ValidationResult.failure("Failed to validate URL format");
             };
-            var regex_t: clib.regex_t = undefined;
-            const regex_pattern = "^(https?|ftp|postgres|redis)://[^[:space:]]+$";
-            defer clib.regfree(&regex_t);
-            const success = clib.regcomp(
-                &regex_t,
-                regex_pattern,
-                clib.REG_EXTENDED | clib.REG_NOSUB,
-            );
             const error_msg = "Failed to validate URL format";
-            if (success != 0) {
-                return engine.ValidationResult.failure(error_msg);
+            const schemes = [_][]const u8{ "https://", "http://", "ftp://", "postgres://", "redis://" };
+            for (schemes) |scheme| {
+                if (zstd.mem.startsWith(u8, s, scheme) and s.len > scheme.len and
+                    zstd.mem.indexOfAny(u8, s, " \t\r\n") == null)
+                {
+                    return engine.ValidationResult.success();
+                }
             }
-            const match = clib.regexec(&regex_t, s.ptr, 0, null, 0);
-            if (match == 0) {
-                return engine.ValidationResult.success();
-            } else {
-                return engine.ValidationResult.failure(error_msg);
-            }
+            return engine.ValidationResult.failure(error_msg);
         }
     }.url_validator);
     try vd.registerCustomMessage("url", "The value must be a valid URL");

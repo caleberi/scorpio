@@ -1,15 +1,16 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const posix = std.posix;
 const c = std.c;
 
 pub const path = std.fs.path;
 
+const is_linux = builtin.os.tag == .linux;
+
 const libc = struct {
     const close = @extern(*const fn (c.fd_t) callconv(.c) c_int, .{ .name = "close" });
-    const fstat = @extern(*const fn (c.fd_t, *c.Stat) callconv(.c) c_int, .{ .name = "fstat" });
     const write = @extern(*const fn (c.fd_t, [*]const u8, usize) callconv(.c) isize, .{ .name = "write" });
     const read = @extern(*const fn (c.fd_t, [*]u8, usize) callconv(.c) isize, .{ .name = "read" });
-    const openat = @extern(*const fn (c.fd_t, [*:0]const u8, c_int, c.mode_t) callconv(.c) c_int, .{ .name = "openat" });
     const mkdirat = @extern(*const fn (c.fd_t, [*:0]const u8, c.mode_t) callconv(.c) c_int, .{ .name = "mkdirat" });
     const unlinkat = @extern(*const fn (c.fd_t, [*:0]const u8, c_uint) callconv(.c) c_int, .{ .name = "unlinkat" });
     const dup = @extern(*const fn (c.fd_t) callconv(.c) c_int, .{ .name = "dup" });
@@ -24,7 +25,7 @@ pub const Stat = struct {
     ctime: i128,
 };
 
-fn timespecToNanos(ts: c.timespec) i128 {
+fn timespecToNanos(ts: anytype) i128 {
     return @as(i128, ts.sec) * std.time.ns_per_s + @as(i128, ts.nsec);
 }
 
@@ -40,7 +41,39 @@ fn check(rc: anytype) !@TypeOf(rc) {
     };
 }
 
-fn statFromC(st: c.Stat) Stat {
+/// Zig 0.16 leaves `std.c.Stat` as `void` on Linux; use `statx` there.
+fn fstatFd(fd: c.fd_t) !Stat {
+    if (comptime is_linux) {
+        var stx = std.mem.zeroes(std.os.linux.Statx);
+        const mask: std.os.linux.STATX = .{
+            .MODE = true,
+            .SIZE = true,
+            .ATIME = true,
+            .MTIME = true,
+            .CTIME = true,
+        };
+        const rc = std.os.linux.statx(fd, "", std.os.linux.AT.EMPTY_PATH, mask, &stx);
+        switch (std.os.linux.errno(rc)) {
+            .SUCCESS => {},
+            .NOENT => return error.FileNotFound,
+            .EXIST => return error.PathAlreadyExists,
+            .ACCES, .PERM => return error.AccessDenied,
+            .ISDIR => return error.IsDir,
+            .NOTDIR => return error.NotDir,
+            else => return error.Unexpected,
+        }
+        return .{
+            .size = stx.size,
+            .mode = stx.mode,
+            .mtime = timespecToNanos(stx.mtime),
+            .atime = timespecToNanos(stx.atime),
+            .ctime = timespecToNanos(stx.ctime),
+        };
+    }
+
+    const fstat = @extern(*const fn (c.fd_t, *c.Stat) callconv(.c) c_int, .{ .name = "fstat" });
+    var st: c.Stat = undefined;
+    _ = try check(fstat(fd, &st));
     return .{
         .size = @intCast(st.size),
         .mode = st.mode,
@@ -49,14 +82,6 @@ fn statFromC(st: c.Stat) Stat {
         .ctime = timespecToNanos(st.ctime()),
     };
 }
-
-// Darwin open flags (also valid enough for Linux for these bits we use).
-const O_RDONLY: c_int = 0x0000;
-const O_WRONLY: c_int = 0x0001;
-const O_CREAT: c_int = if (@import("builtin").os.tag == .macos) 0x0200 else 0x40;
-const O_TRUNC: c_int = if (@import("builtin").os.tag == .macos) 0x0400 else 0x200;
-const O_EXCL: c_int = if (@import("builtin").os.tag == .macos) 0x0800 else 0x80;
-const O_DIRECTORY: c_int = if (@import("builtin").os.tag == .macos) 0x100000 else 0x10000;
 
 pub const File = struct {
     handle: c.fd_t,
@@ -75,9 +100,7 @@ pub const File = struct {
     }
 
     pub fn stat(self: File) !Stat {
-        var st: c.Stat = undefined;
-        _ = try check(libc.fstat(self.handle, &st));
-        return statFromC(st);
+        return fstatFd(self.handle);
     }
 };
 
@@ -94,9 +117,12 @@ pub const Dir = struct {
 
     pub fn openDir(self: Dir, sub_path: []const u8, options: OpenDirOptions) !Dir {
         _ = options;
-        const z = try std.heap.page_allocator.dupeZ(u8, sub_path);
-        defer std.heap.page_allocator.free(z);
-        const fd = try check(libc.openat(self.fd, z.ptr, O_RDONLY | O_DIRECTORY, 0));
+        const fd = try posix.openat(
+            self.fd,
+            sub_path,
+            .{ .ACCMODE = .RDONLY, .DIRECTORY = true },
+            0,
+        );
         return .{ .fd = fd, .owns_fd = true };
     }
 
@@ -157,9 +183,7 @@ pub const Dir = struct {
     }
 
     pub fn stat(self: Dir) !Stat {
-        var st: c.Stat = undefined;
-        _ = try check(libc.fstat(self.fd, &st));
-        return statFromC(st);
+        return fstatFd(self.fd);
     }
 
     pub fn statFile(self: Dir, sub_path: []const u8) !Stat {
