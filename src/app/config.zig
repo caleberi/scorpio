@@ -106,9 +106,16 @@ pub const DatabaseConfig = struct {
         \\//     required - "Database URL is required"
         \\//     url - "Database URL must be a valid postgres URL"
         \\//     min_length - "Database URL must be at least 10 characters"
+        \\// @property: pool_size
+        \\//   @validator: @required,@min=1,@max=100
+        \\//   @messages:
+        \\//     required - "Database pool size is required"
+        \\//     min - "Database pool size cannot be negative"
+        \\//     max - "Database pool size cannot exceed 100"
     ;
 
     url: []const u8,
+    pool_size: i32 = 5,
 };
 
 pub const AppConfig = struct {

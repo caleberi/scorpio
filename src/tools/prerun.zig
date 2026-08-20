@@ -52,7 +52,11 @@ pub fn main(init: std.process.Init) !void {
     const cfg = loaded.config;
 
     const uri = try std.Uri.parse(cfg.db.url);
-    var pool = try pg.Pool.initUri(io, allocator, uri, .{ .size = 2 });
+    var pool = pg.Pool.initUri(io, allocator, uri, .{ .size = 2 }) catch |err| {
+        std.log.err("failed to connect to postgres at {s}: {}", .{ cfg.db.url, err });
+        std.log.err("start it with `docker compose up -d postgres`, then retry", .{});
+        return err;
+    };
     defer pool.deinit();
 
     const sql_files = [_][]const u8{
