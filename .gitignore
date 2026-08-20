@@ -4,3 +4,10 @@ zig-cache/
 .zig-cache/
 zig-pkg/
 .env
+*.bin
+*.dat
+manifest*.json
+*.json
+staging/
+.DS_Store
+blobs/
