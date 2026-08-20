@@ -48,7 +48,11 @@ pub const Router = struct {
                     path_params,
                 );
                 defer ctx.deinit();
-                try action.Action(Def).handle(allocator, request, &ctx);
+                try action.Action(Def).handle(
+                    allocator,
+                    request,
+                    &ctx,
+                );
             }
         }.handle;
 

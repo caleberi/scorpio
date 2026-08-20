@@ -1,13 +1,16 @@
 const std = @import("std");
 const zap = @import("zap");
 const match = @import("match.zig");
-const testing = std.testing;
 
 pub const BindError = error{
     MissingField,
     InvalidValue,
     OutOfMemory,
 };
+
+fn isJsonBody(body: []const u8) bool {
+    return body.len > 0 and body[0] == '{';
+}
 
 pub const RequestContext = struct {
     allocator: std.mem.Allocator,
@@ -29,6 +32,7 @@ pub const RequestContext = struct {
     pub fn put(self: *RequestContext, key: []const u8, value: []const u8) !void {
         const key_owned = try self.allocator.dupe(u8, key);
         errdefer self.allocator.free(key_owned);
+
         const value_owned = try self.allocator.dupe(u8, value);
         errdefer self.allocator.free(value_owned);
 
@@ -67,8 +71,8 @@ pub const RequestContext = struct {
             try ctx.put(entry.key_ptr.*, text);
         }
 
-        request.parseQuery();
         request.parseBody() catch {};
+        request.parseQuery();
 
         var slices = request.getParamSlices();
         while (slices.next()) |kv| {
@@ -76,9 +80,7 @@ pub const RequestContext = struct {
         }
 
         if (request.body) |body| {
-            if (body.len > 0 and body[0] == '{') {
-                try mergeJsonObject(&ctx, body);
-            }
+            if (isJsonBody(body)) try mergeJsonObject(&ctx, body);
         }
 
         return ctx;
@@ -117,11 +119,8 @@ fn jsonValueToString(allocator: std.mem.Allocator, value: std.json.Value) ![]u8 
 
 /// Bind flattened string params into an `Inputs` struct.
 pub fn bind(comptime Inputs: type, ctx: *const RequestContext) BindError!Inputs {
-    if (@typeInfo(Inputs) != .@"struct") {
-        @compileError("Inputs must be a struct");
-    }
-
     var result: Inputs = undefined;
+
     inline for (@typeInfo(Inputs).@"struct".fields) |field| {
         const raw = ctx.get(field.name);
         const FieldType = field.type;
@@ -163,6 +162,8 @@ fn coerce(comptime T: type, text: []const u8) BindError!T {
         else => @compileError("Unsupported input field type: " ++ @typeName(T)),
     };
 }
+
+const testing = std.testing;
 
 test "bind required and optional fields" {
     var ctx = RequestContext{

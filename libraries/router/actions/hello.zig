@@ -8,6 +8,15 @@ pub const Hello = struct {
     pub const description = "Echo a name from query/body/path params";
 
     pub const Inputs = struct {
+        pub const doc: []const u8 =
+            \\// @validation
+            \\// @property: name
+            \\//   @validator: @required,@min_length=1
+            \\//   @messages:
+            \\//     @required - "Name is required"
+            \\//     @min_length - "Name must be at least 1 character"
+        ;
+
         name: []const u8 = "world",
     };
 
@@ -59,4 +68,22 @@ test "hello action path name" {
     try action.Action(Hello).resolve(testing.allocator, &ctx, null, &capture);
     try testing.expectEqualStrings("success", capture.exit_tag);
     try testing.expect(std.mem.indexOf(u8, capture.body, "ada") != null);
+}
+
+test "hello action validation error is sent" {
+    var ctx = bind.RequestContext{
+        .allocator = testing.allocator,
+        .method = .GET,
+        .path = "/hello",
+    };
+    defer ctx.deinit();
+    try ctx.put("name", "");
+
+    var capture: action.Capture = .{};
+    defer capture.deinit();
+
+    try action.Action(Hello).resolve(testing.allocator, &ctx, null, &capture);
+    try testing.expectEqualStrings("badRequest", capture.exit_tag);
+    try testing.expect(std.mem.indexOf(u8, capture.body, "validation failed") != null);
+    try testing.expect(std.mem.indexOf(u8, capture.body, "Name is required") != null);
 }

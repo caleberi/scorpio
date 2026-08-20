@@ -1,7 +1,8 @@
 const zstd = @import("std");
 const zap = @import("zap");
-const common = @import("common");
 const bind = @import("bind.zig");
+const schema = @import("../validation/schema.zig");
+const engine = schema.engine;
 const testing = zstd.testing;
 
 pub const ResponseType = enum { json, text, redirect, empty };
@@ -107,6 +108,30 @@ fn asTextPayload(payload: anytype) []const u8 {
     @compileError("text/redirect exits expect a []const u8 payload");
 }
 
+fn extraValidatorNames(comptime Def: type) []const []const u8 {
+    if (!@hasDecl(Def, "validators")) return &.{};
+    const info = @typeInfo(Def.validators);
+    if (info != .@"struct") {
+        @compileError(@typeName(Def) ++ ".validators must be a struct of validator functions");
+    }
+    const decls = info.@"struct".decls;
+    if (decls.len == 0) return &.{};
+    comptime var names: [decls.len][]const u8 = undefined;
+    inline for (decls, 0..) |decl, i| {
+        names[i] = decl.name;
+    }
+    const frozen = names;
+    return &frozen;
+}
+
+fn registerActionValidators(comptime Def: type, eng: *engine.Engine) schema.SchemaError!void {
+    if (!@hasDecl(Def, "validators")) return;
+    inline for (@typeInfo(Def.validators).@"struct".decls) |decl| {
+        const validator_fn: engine.ValidatorFn = @field(Def.validators, decl.name);
+        try schema.register(eng, decl.name, validator_fn);
+    }
+}
+
 fn validateAction(comptime Def: type) void {
     if (!@hasDecl(Def, "Inputs")) @compileError(@typeName(Def) ++ " missing Inputs");
     if (!@hasDecl(Def, "Exit")) @compileError(@typeName(Def) ++ " missing Exit");
@@ -114,6 +139,7 @@ fn validateAction(comptime Def: type) void {
     if (!@hasDecl(Def, "run")) @compileError(@typeName(Def) ++ " missing run");
     if (@typeInfo(Def.Exit) != .@"enum") @compileError(@typeName(Def) ++ ".Exit must be an enum");
     if (@typeInfo(Def.Inputs) != .@"struct") @compileError(@typeName(Def) ++ ".Inputs must be a struct");
+    schema.assertKnownValidators(Def.Inputs, extraValidatorNames(Def));
 }
 
 pub fn Action(comptime Def: type) type {
@@ -132,6 +158,49 @@ pub fn Action(comptime Def: type) type {
                 try sendBindError(allocator, request, capture, err);
                 return;
             };
+
+            var eng = try schema.DefaultEngine(allocator);
+            defer eng.deinit();
+
+            try registerActionValidators(Def, &eng);
+
+            var compiled = try schema.Schema(Def.Inputs).compile(allocator, null);
+            defer compiled.deinit();
+
+            compiled.ensureRegistered(&eng) catch |err| switch (err) {
+                error.ValidatorNotFound => {
+                    try sendJsonError(
+                        allocator,
+                        request,
+                        capture,
+                        .internal_server_error,
+                        "error_",
+                        .{ .error_message = "action uses an unregistered validator" },
+                    );
+                    return;
+                },
+                else => return err,
+            };
+
+            const outcome = compiled.validate(&eng, inputs) catch |err| switch (err) {
+                error.ValidatorNotFound => {
+                    try sendJsonError(
+                        allocator,
+                        request,
+                        capture,
+                        .internal_server_error,
+                        "error_",
+                        .{ .error_message = "action uses an unregistered validator" },
+                    );
+                    return;
+                },
+                else => return err,
+            };
+            defer outcome.deinit(allocator);
+            if (outcome == .err) {
+                try sendValidationErrors(allocator, request, capture, &.{outcome.err});
+                return;
+            }
 
             var exits: Exits(Def) = if (capture) |cap|
                 Exits(Def).initCapture(allocator, cap)
@@ -154,19 +223,14 @@ pub fn Action(comptime Def: type) type {
     };
 }
 
-fn sendBindError(
+fn sendJsonError(
     allocator: zstd.mem.Allocator,
     request: ?zap.Request,
     capture: ?*Capture,
-    err: bind.BindError,
+    status: zap.http.StatusCode,
+    exit_tag: []const u8,
+    payload: anytype,
 ) !void {
-    const payload = .{
-        .error_message = switch (err) {
-            error.MissingField => "missing required input",
-            error.InvalidValue => "invalid input value",
-            error.OutOfMemory => "out of memory",
-        },
-    };
     const body = try zstd.json.Stringify.valueAlloc(allocator, payload, .{});
     defer allocator.free(body);
 
@@ -175,16 +239,43 @@ fn sendBindError(
             if (cap.allocator) |a| a.free(cap.body);
         }
         cap.allocator = allocator;
-        cap.exit_tag = "badRequest";
-        cap.status = .bad_request;
+        cap.exit_tag = exit_tag;
+        cap.status = status;
         cap.response_type = .json;
         cap.body = try allocator.dupe(u8, body);
         return;
     }
 
     const req = request orelse return;
-    req.setStatus(.bad_request);
+    req.setStatus(status);
     try req.sendJson(body);
+}
+
+fn sendBindError(
+    allocator: zstd.mem.Allocator,
+    request: ?zap.Request,
+    capture: ?*Capture,
+    err: bind.BindError,
+) !void {
+    try sendJsonError(allocator, request, capture, .bad_request, "badRequest", .{
+        .error_message = switch (err) {
+            error.MissingField => "missing required input",
+            error.InvalidValue => "invalid input value",
+            error.OutOfMemory => "out of memory",
+        },
+    });
+}
+
+fn sendValidationErrors(
+    allocator: zstd.mem.Allocator,
+    request: ?zap.Request,
+    capture: ?*Capture,
+    errors: []const schema.FieldError,
+) !void {
+    try sendJsonError(allocator, request, capture, .bad_request, "badRequest", .{
+        .error_message = "validation failed",
+        .errors = errors,
+    });
 }
 
 test "exit metadata selection" {
@@ -240,4 +331,116 @@ test "action run via capture sink" {
     try testing.expectEqualStrings("success", capture.exit_tag);
     try testing.expectEqual(zap.http.StatusCode.ok, capture.status);
     try testing.expect(zstd.mem.indexOf(u8, capture.body, "zap") != null);
+}
+
+test "action validation errors are sent as badRequest" {
+    const Def = struct {
+        pub const Inputs = struct {
+            pub const doc: []const u8 =
+                \\// @validation
+                \\// @property: name
+                \\//   @validator: @required,@min_length=3
+                \\//   @messages:
+                \\//     @required - "Name is required"
+                \\//     @min_length - "Name must be at least 3 characters"
+            ;
+            name: []const u8,
+        };
+        pub const Exit = enum { success, badRequest };
+
+        pub fn exitMeta(comptime e: Exit) ExitMeta {
+            return switch (e) {
+                .success => .{ .status = .ok, .response_type = .json },
+                .badRequest => .{ .status = .bad_request, .response_type = .json },
+            };
+        }
+
+        pub fn run(inputs: Inputs, exits: *Exits(@This())) !void {
+            return exits.send(.success, .{ .message = inputs.name });
+        }
+    };
+
+    var ctx = bind.RequestContext{
+        .allocator = testing.allocator,
+        .method = .GET,
+        .path = "/hello",
+    };
+    defer ctx.deinit();
+    try ctx.put("name", "ab");
+
+    var capture: Capture = .{};
+    defer capture.deinit();
+
+    try Action(Def).resolve(testing.allocator, &ctx, null, &capture);
+    try testing.expectEqualStrings("badRequest", capture.exit_tag);
+    try testing.expectEqual(zap.http.StatusCode.bad_request, capture.status);
+    try testing.expect(zstd.mem.indexOf(u8, capture.body, "validation failed") != null);
+    try testing.expect(zstd.mem.indexOf(u8, capture.body, "min_length") != null);
+    try testing.expect(zstd.mem.indexOf(u8, capture.body, "Name must be at least 3 characters") != null);
+}
+
+test "action custom validators can be registered on the definition" {
+    const Def = struct {
+        pub const Inputs = struct {
+            pub const doc: []const u8 =
+                \\// @validation
+                \\// @property: kind
+                \\//   @validator: @endswith=er
+                \\//   @messages:
+                \\//     @endswith - "must end with er"
+            ;
+            kind: []const u8,
+        };
+        pub const validators = struct {
+            pub fn endswith(ctx: engine.Context) engine.ValidationError!engine.ValidationResult {
+                if (ctx.params.len != 1) return error.InvalidParameterCount;
+                const s = ctx.value.asString() orelse {
+                    return engine.ValidationResult.failure("must be a string");
+                };
+                if (zstd.mem.endsWith(u8, s, ctx.params[0].value)) {
+                    return engine.ValidationResult.success();
+                }
+                return engine.ValidationResult.failure("suffix mismatch");
+            }
+        };
+        pub const Exit = enum { success };
+
+        pub fn exitMeta(comptime e: Exit) ExitMeta {
+            return switch (e) {
+                .success => .{ .status = .ok, .response_type = .json },
+            };
+        }
+
+        pub fn run(inputs: Inputs, exits: *Exits(@This())) !void {
+            return exits.send(.success, .{ .kind = inputs.kind });
+        }
+    };
+
+    var ok_ctx = bind.RequestContext{
+        .allocator = testing.allocator,
+        .method = .POST,
+        .path = "/item",
+    };
+    defer ok_ctx.deinit();
+    try ok_ctx.put("kind", "runner");
+
+    var ok_capture: Capture = .{};
+    defer ok_capture.deinit();
+    try Action(Def).resolve(testing.allocator, &ok_ctx, null, &ok_capture);
+    try testing.expectEqualStrings("success", ok_capture.exit_tag);
+
+    var bad_ctx = bind.RequestContext{
+        .allocator = testing.allocator,
+        .method = .POST,
+        .path = "/item",
+    };
+    defer bad_ctx.deinit();
+    try bad_ctx.put("kind", "run");
+
+    var bad_capture: Capture = .{};
+    defer bad_capture.deinit();
+    try Action(Def).resolve(testing.allocator, &bad_ctx, null, &bad_capture);
+    try testing.expectEqualStrings("badRequest", bad_capture.exit_tag);
+    try testing.expect(zstd.mem.indexOf(u8, bad_capture.body, "endswith") != null);
+    try testing.expect(zstd.mem.indexOf(u8, bad_capture.body, "must end with er") != null);
 }
