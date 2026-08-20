@@ -10,8 +10,17 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, rootDir, '')
   const apiProxyTarget =
-    env.API_PROXY_TARGET || env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:9090'
+    process.env.API_UPSTREAM ||
+    env.API_UPSTREAM ||
+    env.API_PROXY_TARGET ||
+    env.VITE_API_PROXY_TARGET ||
+    'http://127.0.0.1:9090'
   const port = Number(env.DEV_PORT || env.VITE_DEV_PORT || 5173)
+  const previewPort = Number(process.env.PORT || env.PREVIEW_PORT || 4173)
+  const apiProxy = {
+    '/blog': { target: apiProxyTarget, changeOrigin: true },
+    '/hello': { target: apiProxyTarget, changeOrigin: true },
+  }
 
   return {
     plugins: [
@@ -26,12 +35,16 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port,
-      proxy: {
-        '/blog': {
-          target: apiProxyTarget,
-          changeOrigin: true,
-        },
-      },
+      host: true,
+      allowedHosts: true,
+      proxy: apiProxy,
+    },
+    preview: {
+      port: previewPort,
+      host: true,
+      strictPort: true,
+      allowedHosts: true,
+      proxy: apiProxy,
     },
   }
 })

@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "generate-routes": "npx @tanstack/router-cli generate",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview --host 0.0.0.0 --port ${PORT:-4173}",
+    "start": "vite preview --host 0.0.0.0 --port ${PORT:-4173}"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.3.3",
@@ -33,11 +34,11 @@
     "shiki": "^4.4.3",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.3",
-    "typescript": "~6.0.2"
+    "typescript": "~6.0.2",
+    "vite": "^8.2.2"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
-    "oxlint": "^1.75.0",
-    "vite": "^8.2.2"
+    "oxlint": "^1.75.0"
   }
 }
