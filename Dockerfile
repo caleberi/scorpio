@@ -63,6 +63,16 @@ COPY web/index.html web/tsconfig.json web/tsconfig.app.json web/tsconfig.node.js
 COPY web/src ./src
 COPY web/public ./public
 
+# Root .gitignore drops *.json, so this file is never in the git build context.
+RUN printf '%s\n' '{
+"cudium": {"href": "https://cudium.com/", "label": "Cudium"},
+"circlefunds": {"href": "https://www.circlefunds.io/", "label": "CircleFunds"},
+"render": {"href": "https://dashboard.render.com/", "label": "Render", "tone": "ink"},
+"google": {"href": "https://www.google.com/", "label": "Google"},
+"facebook": {"href": "https://www.facebook.com/", "label": "Facebook"},
+"x": {"href": "https://x.com/", "label": "X", "tone": "ink"}
+}' > src/sponsors/sponsors.json
+
 ENV NODE_ENV=production
 RUN npm run build
 
