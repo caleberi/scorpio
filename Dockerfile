@@ -76,6 +76,9 @@ COPY docker/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY docker/nginx-env.sh /docker-entrypoint.d/18-scorpio-env.envsh
 COPY --from=web-build /web/dist /usr/share/nginx/html
 
+# nginx's entrypoint sources *.envsh only when the file is executable.
+RUN chmod +x /docker-entrypoint.d/18-scorpio-env.envsh
+
 EXPOSE 80
 
 
