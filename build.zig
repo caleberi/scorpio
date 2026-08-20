@@ -168,7 +168,11 @@ pub fn build(b: *zstd.Build) !void {
         "A comma-separated list of test filters to run",
     ) orelse &[0][]const u8{};
 
-    const target = b.standardTargetOptions(.{});
+    const target = b.standardTargetOptions(.{
+        .default_target = .{
+            .cpu_model = .baseline,
+        },
+    });
     const optimize = b.standardOptimizeOption(.{});
 
     const build_info = buildInfoModule(b);

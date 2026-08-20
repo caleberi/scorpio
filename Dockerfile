@@ -51,7 +51,8 @@ COPY src ./src
 COPY libraries ./libraries
 COPY common ./common
 
-RUN zig build -Doptimize=ReleaseSafe
+# Portable CPU: native features from the build host SIGILL on Render (exit 132).
+RUN zig build -Doptimize=ReleaseSafe -Dcpu=baseline
 
 
 FROM node:${NODE_VERSION}-bookworm-slim AS web-build
