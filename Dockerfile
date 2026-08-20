@@ -59,9 +59,10 @@ FROM node:${NODE_VERSION}-bookworm-slim AS web-build
 
 WORKDIR /web
 
-# Render sets NODE_ENV=production; that would skip typescript/vite/@types/*.
+# Render injects NODE_ENV=production and NPM_CONFIG_PRODUCTION=true at
+# build time. Those omit packages unless we force a full install.
 COPY web/package.json web/package-lock.json web/.npmrc ./
-RUN npm ci --include=dev
+RUN NPM_CONFIG_PRODUCTION=false NPM_CONFIG_OMIT= npm ci
 
 COPY web/index.html web/tsconfig.json web/tsconfig.app.json web/tsconfig.node.json web/vite.config.ts ./
 COPY web/src ./src
