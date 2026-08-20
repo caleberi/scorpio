@@ -95,7 +95,6 @@ pub const Parser = struct {
         var messages = try zstd.ArrayList(ValidationMessage).initCapacity(self.allocator, 8);
         var documentation = try zstd.ArrayList([]const u8).initCapacity(self.allocator, 4);
         var property: ?[]const u8 = null;
-        var in_validation_block = false;
 
         errdefer {
             for (specs.items) |spec| {
@@ -122,7 +121,6 @@ pub const Parser = struct {
                 },
                 .validation_tag => {
                     _ = self.advance();
-                    in_validation_block = true;
                     self.skipNewlines();
                 },
                 .property_tag => {
@@ -131,7 +129,7 @@ pub const Parser = struct {
                     const name_token = try self.expect(.identifier);
                     const name = name_token.lexeme(self.source);
 
-                    if (in_validation_block and property != null) {
+                    if (property != null) {
                         try self.emitSpec(
                             &specs,
                             &documentation,
@@ -163,7 +161,7 @@ pub const Parser = struct {
             }
         }
 
-        if (in_validation_block and property != null) {
+        if (property != null) {
             try self.emitSpec(
                 &specs,
                 &documentation,
@@ -173,6 +171,9 @@ pub const Parser = struct {
             );
         }
 
+        for (validators.items) |validator| {
+            validator.deinit(self.allocator);
+        }
         documentation.deinit(self.allocator);
         validators.deinit(self.allocator);
         messages.deinit(self.allocator);

@@ -1,7 +1,7 @@
 const zstd = @import("std");
 const lexer = @import("lexer.zig");
 const parser = @import("parser.zig");
-const engine = @import("engine.zig");
+pub const engine = @import("engine.zig");
 const validator = @import("default.zig");
 
 pub const SchemaError = error{
@@ -109,6 +109,140 @@ pub fn register(
     validator_fn: engine.ValidatorFn,
 ) SchemaError!void {
     e.registerValidator(name, validator_fn) catch return error.OutOfMemory;
+}
+
+pub const default_validator_names = [_][]const u8{
+    "alpha",
+    "numeric",
+    "min_length",
+    "max_length",
+    "min",
+    "max",
+    "required",
+    "email",
+};
+
+pub fn isDefaultValidator(name: []const u8) bool {
+    for (default_validator_names) |n| {
+        if (zstd.mem.eql(u8, n, name)) return true;
+    }
+    return false;
+}
+
+pub fn isAllowedValidator(name: []const u8, extra: []const []const u8) bool {
+    if (isDefaultValidator(name)) return true;
+    for (extra) |n| {
+        if (zstd.mem.eql(u8, n, name)) return true;
+    }
+    return false;
+}
+
+const ScanState = struct {
+    i: usize = 0,
+    in_list: bool = false,
+};
+
+fn isIdentContinue(c: u8) bool {
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '_';
+}
+
+fn skipWs(source: []const u8, state: *ScanState) void {
+    while (state.i < source.len) {
+        switch (source[state.i]) {
+            ' ', '\t' => state.i += 1,
+            else => return,
+        }
+    }
+}
+
+fn nextValidatorName(source: []const u8, state: *ScanState) ?[]const u8 {
+    const marker = "@validator:";
+    while (state.i < source.len) {
+        if (!state.in_list) {
+            if (state.i + marker.len <= source.len and
+                zstd.mem.eql(u8, source[state.i .. state.i + marker.len], marker))
+            {
+                state.i += marker.len;
+                state.in_list = true;
+                continue;
+            }
+            state.i += 1;
+            continue;
+        }
+
+        skipWs(source, state);
+        if (state.i >= source.len) return null;
+        switch (source[state.i]) {
+            '\n', '\r' => {
+                state.in_list = false;
+                state.i += 1;
+                continue;
+            },
+            ',' => {
+                state.i += 1;
+                continue;
+            },
+            else => {},
+        }
+
+        if (source[state.i] == '@') state.i += 1;
+        const start = state.i;
+        while (state.i < source.len and isIdentContinue(source[state.i])) state.i += 1;
+        if (state.i == start) {
+            while (state.i < source.len and source[state.i] != ',' and source[state.i] != '\n' and source[state.i] != '\r') {
+                state.i += 1;
+            }
+            continue;
+        }
+        const name = source[start..state.i];
+        while (state.i < source.len and source[state.i] != ',' and source[state.i] != '\n' and source[state.i] != '\r') {
+            state.i += 1;
+        }
+        return name;
+    }
+    return null;
+}
+
+fn countValidatorNames(source: []const u8) usize {
+    var state: ScanState = .{};
+    var count: usize = 0;
+    while (nextValidatorName(source, &state)) |_| count += 1;
+    return count;
+}
+
+pub fn scanValidatorNames(comptime source: []const u8) []const []const u8 {
+    const names = comptime blk: {
+        const count = countValidatorNames(source);
+        var result: [count][]const u8 = undefined;
+        var state: ScanState = .{};
+        for (&result) |*slot| {
+            slot.* = nextValidatorName(source, &state).?;
+        }
+        break :blk result;
+    };
+    return &names;
+}
+
+pub fn assertKnownValidators(comptime T: type, comptime extra: []const []const u8) void {
+    const source = docOf(T);
+    comptime {
+        var state: ScanState = .{};
+        while (nextValidatorName(source, &state)) |name| {
+            if (!isAllowedValidator(name, extra)) {
+                @compileError("unregistered validator '" ++ name ++ "' in " ++ @typeName(T));
+            }
+        }
+    }
+
+    const info = @typeInfo(T);
+    if (info != .@"struct") return;
+    inline for (info.@"struct".fields) |field| {
+        if (comptime !isDocField(field.name)) {
+            if (comptime nestedStructType(field.type)) |Child| {
+                assertKnownValidators(Child, extra);
+            }
+        }
+    }
 }
 
 pub const CompiledDoc = struct {
@@ -226,6 +360,14 @@ pub fn Schema(comptime T: type) type {
             return self.validateAt(eng, value, "");
         }
 
+        pub fn ensureRegistered(self: *const Self, eng: *const engine.Engine) SchemaError!void {
+            try ensureCompiledRegistered(&self.compiled, eng);
+            var it = self.nested.iterator();
+            while (it.next()) |entry| {
+                try ensureCompiledRegistered(entry.value_ptr, eng);
+            }
+        }
+
         fn validateAt(
             self: *Self,
             eng: *engine.Engine,
@@ -286,6 +428,14 @@ pub fn Schema(comptime T: type) type {
             return .ok;
         }
     };
+}
+
+fn ensureCompiledRegistered(compiled: *const CompiledDoc, eng: *const engine.Engine) SchemaError!void {
+    for (compiled.documentation.specs) |spec| {
+        for (spec.validators) |rule| {
+            if (eng.validators.get(rule.name) == null) return error.ValidatorNotFound;
+        }
+    }
 }
 
 fn validateNested(
@@ -479,6 +629,54 @@ test "schema" {
                     try zstd.testing.expectEqualStrings("doc", docOf(Both));
                     try zstd.testing.expectEqualStrings("documentation", docOf(OnlyDoc));
                     try zstd.testing.expectEqualStrings("", docOf(None));
+                }
+            }.executor,
+        },
+        .{
+            .name = "scanValidatorNames extracts rules from @validator lines",
+            .run_test = struct {
+                fn executor(allocator: zstd.mem.Allocator) anyerror!void {
+                    _ = allocator;
+                    const names = scanValidatorNames(
+                        \\// @property: name
+                        \\//   @validator: @required,@min_length=1,@email
+                        \\//   @messages:
+                        \\//     required - "Name is required"
+                    );
+                    try zstd.testing.expectEqual(@as(usize, 3), names.len);
+                    try zstd.testing.expectEqualStrings("required", names[0]);
+                    try zstd.testing.expectEqualStrings("min_length", names[1]);
+                    try zstd.testing.expectEqualStrings("email", names[2]);
+                    try zstd.testing.expect(isAllowedValidator("required", &.{}));
+                    try zstd.testing.expect(!isAllowedValidator("endswith", &.{}));
+                    try zstd.testing.expect(isAllowedValidator("endswith", &.{"endswith"}));
+                }
+            }.executor,
+        },
+        .{
+            .name = "ensureRegistered rejects unregistered validators",
+            .run_test = struct {
+                fn executor(allocator: zstd.mem.Allocator) anyerror!void {
+                    const Item = struct {
+                        pub const doc: []const u8 =
+                            \\// @validation
+                            \\// @property: kind
+                            \\//   @validator: @endswith=er
+                        ;
+                        kind: []const u8,
+                    };
+                    var eng = try DefaultEngine(allocator);
+                    defer eng.deinit();
+                    var compiled = try Schema(Item).compile(allocator, null);
+                    defer compiled.deinit();
+                    try zstd.testing.expectError(error.ValidatorNotFound, compiled.ensureRegistered(&eng));
+                    try register(&eng, "endswith", struct {
+                        fn endswith(ctx: engine.Context) engine.ValidationError!engine.ValidationResult {
+                            _ = ctx;
+                            return engine.ValidationResult.success();
+                        }
+                    }.endswith);
+                    try compiled.ensureRegistered(&eng);
                 }
             }.executor,
         },
