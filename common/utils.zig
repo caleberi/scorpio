@@ -1,8 +1,13 @@
 const zstd = @import("std");
 const Allocator = zstd.mem.Allocator;
 
+/// Convert Unix timestamp to seconds since epoch
+/// See: https://man7.org/linux/man-pages/man2/time.2.html
 pub fn unixTimestamp() i64 {
-    return @extern(*const fn (?*c_long) callconv(.c) c_long, .{ .name = "time" })(null);
+    return @extern(
+        *const fn (?*c_long) callconv(.c) c_long,
+        .{ .name = "time" },
+    )(null);
 }
 
 fn resolveIndex(index: isize, len: usize) usize {
@@ -375,8 +380,8 @@ pub fn copyWithin(comptime T: type, items: []T, target: isize, start: isize, end
 
 // --- tests ---
 
-fn double(_: void, n: i32) i32 {
-    return n * 2;
+fn double(_: void, n: i32) usize {
+    return @intCast(n * 2);
 }
 
 fn toUsize(_: void, n: i32) usize {
@@ -387,8 +392,16 @@ fn isEven(_: void, n: i32) bool {
     return @mod(n, 2) == 0;
 }
 
+fn isOdd(_: void, n: i32) bool {
+    return @mod(n, 2) != 0;
+}
+
 fn add(_: void, acc: i32, n: i32) i32 {
     return acc + n;
+}
+
+fn subtract(_: void, acc: i32, n: i32) i32 {
+    return acc - n;
 }
 
 fn lessI32(_: void, a: i32, b: i32) bool {
@@ -405,28 +418,120 @@ fn expand(_: void, n: i32) []const i32 {
 
 const testing = zstd.testing;
 
-test "map changes element type" {
-    const items = [_]i32{ 1, 2, 3 };
-    const result = try map(i32, usize, testing.allocator, &items, {}, toUsize);
-    defer testing.allocator.free(result);
-    try testing.expectEqualSlices(usize, &[_]usize{ 1, 2, 3 }, result);
+fn MapTest(comptime T: type, comptime R: type) type {
+    return struct {
+        input: []const T,
+        expected: []const R,
+        mapFn: fn (void, T) R,
+    };
 }
 
-test "map transforms values" {
-    const items = [_]i32{ 1, 2, 3 };
-    const result = try map(i32, i32, testing.allocator, &items, {}, double);
-    defer testing.allocator.free(result);
-    try testing.expectEqualSlices(i32, &[_]i32{ 2, 4, 6 }, result);
+test MapTest {
+    const TestCase = MapTest(i32, usize);
+    const tests = [_]TestCase{
+        TestCase{ .input = &[_]i32{ 1, 2, 3 }, .expected = &[_]usize{ 1, 2, 3 }, .mapFn = toUsize },
+        TestCase{ .input = &[_]i32{ 4, 5, 6 }, .expected = &[_]usize{ 8, 10, 12 }, .mapFn = double },
+        TestCase{ .input = &[_]i32{ 13, 14, 15 }, .expected = &[_]usize{ 26, 28, 30 }, .mapFn = double },
+    };
+
+    inline for (tests) |t| {
+        const result = try map(
+            zstd.meta.Child(@TypeOf(t.input)),
+            zstd.meta.Child(@TypeOf(t.expected)),
+            testing.allocator,
+            t.input,
+            {},
+            t.mapFn,
+        );
+        defer testing.allocator.free(result);
+        try testing.expectEqualSlices(
+            zstd.meta.Child(@TypeOf(t.expected)),
+            t.expected,
+            result,
+        );
+    }
 }
 
-test "filter and reduce" {
-    const items = [_]i32{ 1, 2, 3, 4, 5 };
-    const evens = try filter(i32, testing.allocator, &items, {}, isEven);
-    defer testing.allocator.free(evens);
-    try testing.expectEqualSlices(i32, &[_]i32{ 2, 4 }, evens);
+fn FilterTest(comptime T: type, comptime R: type) type {
+    return struct {
+        input: []const T,
+        expected: []const R,
+        func: fn (void, T) bool,
+    };
+}
 
-    try testing.expectEqual(@as(i32, 15), reduce(i32, i32, &items, 0, {}, add));
-    try testing.expectEqual(@as(i32, 15), reduceRight(i32, i32, &items, 0, {}, add));
+test FilterTest {
+    const TestCase = FilterTest(i32, i32);
+    const tests = [_]TestCase{
+        TestCase{ .input = &[_]i32{ 1, 2, 3, 4, 5 }, .expected = &[_]i32{ 2, 4 }, .func = isEven },
+        TestCase{ .input = &[_]i32{ 1, 2, 3, 4, 5 }, .expected = &[_]i32{ 2, 4 }, .func = isEven },
+        TestCase{ .input = &[_]i32{ 1, 2, 3, 4, 5 }, .expected = &[_]i32{ 1, 3, 5 }, .func = isOdd },
+    };
+
+    inline for (tests) |t| {
+        const result = try filter(
+            zstd.meta.Child(@TypeOf(t.input)),
+            testing.allocator,
+            t.input,
+            {},
+            t.func,
+        );
+        defer testing.allocator.free(result);
+        try testing.expectEqualSlices(
+            zstd.meta.Child(@TypeOf(t.expected)),
+            t.expected,
+            result,
+        );
+    }
+}
+
+fn ReduceTest(comptime T: type, comptime R: type) type {
+    return struct {
+        input: []const T,
+        initial: R,
+        expected: R,
+        func: fn (void, R, T) R,
+    };
+}
+
+test ReduceTest {
+    const TestCase = ReduceTest(i32, i32);
+    const leftTest = [_]TestCase{
+        TestCase{ .input = &[_]i32{ 1, 2, 3, 4, 5 }, .initial = 15, .expected = 30, .func = add },
+        TestCase{ .input = &[_]i32{ 1, 2, 3, 4, 5 }, .initial = 30, .expected = 15, .func = subtract },
+        TestCase{ .input = &[_]i32{ 1, 2, 3, 4 }, .initial = 15, .expected = 25, .func = add },
+    };
+
+    inline for (leftTest) |t| {
+        const result = reduce(
+            zstd.meta.Child(@TypeOf(t.input)),
+            @TypeOf(t.expected),
+            t.input,
+            t.initial,
+            {},
+            t.func,
+        );
+        try testing.expectEqual(t.expected, result);
+    }
+
+    const TestCaseRight = ReduceTest(i32, i32);
+    const rightTests = [_]TestCaseRight{
+        TestCaseRight{ .input = &[_]i32{ 1, 2, 3, 4, 5 }, .initial = 15, .expected = 30, .func = add },
+        TestCaseRight{ .input = &[_]i32{ 1, 2, 3, 4, 5 }, .initial = 30, .expected = 15, .func = subtract },
+        TestCaseRight{ .input = &[_]i32{ 1, 2, 3, 4 }, .initial = 15, .expected = 25, .func = add },
+    };
+
+    inline for (rightTests) |t| {
+        const result = reduceRight(
+            zstd.meta.Child(@TypeOf(t.input)),
+            @TypeOf(t.expected),
+            t.input,
+            t.initial,
+            {},
+            t.func,
+        );
+        try testing.expectEqual(t.expected, result);
+    }
 }
 
 test "find some every includes" {
