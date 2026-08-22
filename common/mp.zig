@@ -60,7 +60,7 @@ pub fn ManagedPointer(comptime Ptr: type) type {
 
 const testing = zstd.testing;
 
-test "ManagedPointer" {
+test ManagedPointer {
     const Test = struct {
         name: []const u8,
         test_fn: *const fn (allocator: zstd.mem.Allocator) anyerror!void,
