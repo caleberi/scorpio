@@ -237,12 +237,7 @@ pub fn slice(
     return try allocator.dupe(T, items[from..to]);
 }
 
-pub fn concat(
-    comptime T: type,
-    allocator: Allocator,
-    a: []const T,
-    b: []const T,
-) ![]T {
+pub fn concat(comptime T: type, allocator: Allocator, a: []const T, b: []const T) ![]T {
     const result = try allocator.alloc(T, a.len + b.len);
     @memcpy(result[0..a.len], a);
     @memcpy(result[a.len..], b);
@@ -422,33 +417,22 @@ fn MapTest(comptime T: type, comptime R: type) type {
     return struct {
         input: []const T,
         expected: []const R,
-        mapFn: fn (void, T) R,
+        func: fn (void, T) R,
     };
 }
 
 test MapTest {
     const TestCase = MapTest(i32, usize);
     const tests = [_]TestCase{
-        TestCase{ .input = &[_]i32{ 1, 2, 3 }, .expected = &[_]usize{ 1, 2, 3 }, .mapFn = toUsize },
-        TestCase{ .input = &[_]i32{ 4, 5, 6 }, .expected = &[_]usize{ 8, 10, 12 }, .mapFn = double },
-        TestCase{ .input = &[_]i32{ 13, 14, 15 }, .expected = &[_]usize{ 26, 28, 30 }, .mapFn = double },
+        TestCase{ .input = &[_]i32{ 1, 2, 3 }, .expected = &[_]usize{ 1, 2, 3 }, .func = toUsize },
+        TestCase{ .input = &[_]i32{ 4, 5, 6 }, .expected = &[_]usize{ 8, 10, 12 }, .func = double },
+        TestCase{ .input = &[_]i32{ 13, 14, 15 }, .expected = &[_]usize{ 26, 28, 30 }, .func = double },
     };
 
     inline for (tests) |t| {
-        const result = try map(
-            zstd.meta.Child(@TypeOf(t.input)),
-            zstd.meta.Child(@TypeOf(t.expected)),
-            testing.allocator,
-            t.input,
-            {},
-            t.mapFn,
-        );
+        const result = try map(zstd.meta.Child(@TypeOf(t.input)), zstd.meta.Child(@TypeOf(t.expected)), testing.allocator, t.input, {}, t.func);
         defer testing.allocator.free(result);
-        try testing.expectEqualSlices(
-            zstd.meta.Child(@TypeOf(t.expected)),
-            t.expected,
-            result,
-        );
+        try testing.expectEqualSlices(zstd.meta.Child(@TypeOf(t.expected)), t.expected, result);
     }
 }
 
@@ -469,19 +453,9 @@ test FilterTest {
     };
 
     inline for (tests) |t| {
-        const result = try filter(
-            zstd.meta.Child(@TypeOf(t.input)),
-            testing.allocator,
-            t.input,
-            {},
-            t.func,
-        );
+        const result = try filter(zstd.meta.Child(@TypeOf(t.input)), testing.allocator, t.input, {}, t.func);
         defer testing.allocator.free(result);
-        try testing.expectEqualSlices(
-            zstd.meta.Child(@TypeOf(t.expected)),
-            t.expected,
-            result,
-        );
+        try testing.expectEqualSlices(zstd.meta.Child(@TypeOf(t.expected)), t.expected, result);
     }
 }
 
@@ -503,14 +477,7 @@ test ReduceTest {
     };
 
     inline for (leftTest) |t| {
-        const result = reduce(
-            zstd.meta.Child(@TypeOf(t.input)),
-            @TypeOf(t.expected),
-            t.input,
-            t.initial,
-            {},
-            t.func,
-        );
+        const result = reduce(zstd.meta.Child(@TypeOf(t.input)), @TypeOf(t.expected), t.input, t.initial, {}, t.func);
         try testing.expectEqual(t.expected, result);
     }
 
@@ -522,45 +489,137 @@ test ReduceTest {
     };
 
     inline for (rightTests) |t| {
-        const result = reduceRight(
-            zstd.meta.Child(@TypeOf(t.input)),
-            @TypeOf(t.expected),
-            t.input,
-            t.initial,
-            {},
-            t.func,
-        );
+        const result = reduceRight(zstd.meta.Child(@TypeOf(t.input)), @TypeOf(t.expected), t.input, t.initial, {}, t.func);
         try testing.expectEqual(t.expected, result);
     }
 }
 
-test "find some every includes" {
-    const items = [_]i32{ 1, 2, 3, 2, 5 };
-    try testing.expectEqual(@as(?i32, 2), find(i32, &items, {}, isEven));
-    try testing.expectEqual(@as(?usize, 1), findIndex(i32, &items, {}, isEven));
-    try testing.expectEqual(@as(?i32, 2), findLast(i32, &items, {}, isEven));
-    try testing.expectEqual(@as(?usize, 3), findLastIndex(i32, &items, {}, isEven));
-    try testing.expect(some(i32, &items, {}, isEven));
-    try testing.expect(!every(i32, &items, {}, isEven));
-    try testing.expect(includes(i32, &items, 5));
-    try testing.expect(!includes(i32, &items, 9));
-    try testing.expectEqual(@as(?usize, 1), indexOf(i32, &items, 2));
-    try testing.expectEqual(@as(?usize, 3), lastIndexOf(i32, &items, 2));
+fn FindTest(comptime T: type, comptime R: type) type {
+    return struct {
+        input: []const T,
+        expected: R,
+        func: fn (void, T) bool,
+    };
 }
 
-test "slice negative indexes" {
-    const items = [_]i32{ 0, 1, 2, 3, 4 };
-    const mid = try slice(i32, testing.allocator, &items, 1, 4);
-    defer testing.allocator.free(mid);
-    try testing.expectEqualSlices(i32, &[_]i32{ 1, 2, 3 }, mid);
+fn IndexOfTest(comptime T: type, comptime R: type) type {
+    return struct {
+        input: []const T,
+        value: T,
+        expected: R,
+    };
+}
 
-    const tail = try slice(i32, testing.allocator, &items, -2, null);
-    defer testing.allocator.free(tail);
-    try testing.expectEqualSlices(i32, &[_]i32{ 3, 4 }, tail);
+test FindTest {
+    const FindCase = FindTest(i32, ?i32);
+    const findTests = [_]FindCase{
+        .{ .input = &[_]i32{ 1, 2, 3, 4, 5 }, .expected = 2, .func = isEven },
+        .{ .input = &[_]i32{ 1, 3, 5 }, .expected = null, .func = isEven },
+    };
+    inline for (findTests) |t| {
+        const result = find(zstd.meta.Child(@TypeOf(t.input)), t.input, {}, t.func);
+        try testing.expectEqual(t.expected, result);
+    }
 
-    const from_neg = try slice(i32, testing.allocator, &items, -3, -1);
-    defer testing.allocator.free(from_neg);
-    try testing.expectEqualSlices(i32, &[_]i32{ 2, 3 }, from_neg);
+    const IndexCase = FindTest(i32, ?usize);
+    const findIndexTests = [_]IndexCase{
+        .{ .input = &[_]i32{ 1, 2, 3, 4, 5 }, .expected = 1, .func = isEven },
+        .{ .input = &[_]i32{ 1, 3, 5 }, .expected = null, .func = isEven },
+    };
+    inline for (findIndexTests) |t| {
+        const result = findIndex(zstd.meta.Child(@TypeOf(t.input)), t.input, {}, t.func);
+        try testing.expectEqual(t.expected, result);
+    }
+
+    const findLastTests = [_]FindCase{
+        .{ .input = &[_]i32{ 1, 2, 3, 4, 5 }, .expected = 4, .func = isEven },
+        .{ .input = &[_]i32{ 1, 3, 5 }, .expected = null, .func = isEven },
+        .{ .input = &[_]i32{ 1, 2, 3, 2, 5 }, .expected = 2, .func = isEven },
+    };
+    inline for (findLastTests) |t| {
+        const result = findLast(zstd.meta.Child(@TypeOf(t.input)), t.input, {}, t.func);
+        try testing.expectEqual(t.expected, result);
+    }
+
+    const findLastIndexTests = [_]IndexCase{
+        .{ .input = &[_]i32{ 1, 2, 3, 4, 5 }, .expected = 3, .func = isEven },
+        .{ .input = &[_]i32{ 1, 3, 5 }, .expected = null, .func = isEven },
+        .{ .input = &[_]i32{ 1, 2, 3, 2, 5 }, .expected = 3, .func = isEven },
+    };
+    inline for (findLastIndexTests) |t| {
+        const result = findLastIndex(zstd.meta.Child(@TypeOf(t.input)), t.input, {}, t.func);
+        try testing.expectEqual(t.expected, result);
+    }
+
+    const BoolCase = FindTest(i32, bool);
+    const someTests = [_]BoolCase{
+        .{ .input = &[_]i32{ 1, 2, 3, 2, 5 }, .expected = true, .func = isEven },
+        .{ .input = &[_]i32{ 1, 3, 5 }, .expected = false, .func = isEven },
+    };
+    inline for (someTests) |t| {
+        const result = some(zstd.meta.Child(@TypeOf(t.input)), t.input, {}, t.func);
+        try testing.expectEqual(t.expected, result);
+    }
+
+    const everyTests = [_]BoolCase{
+        .{ .input = &[_]i32{ 1, 2, 3, 2, 5 }, .expected = false, .func = isEven },
+        .{ .input = &[_]i32{ 2, 4, 6 }, .expected = true, .func = isEven },
+    };
+    inline for (everyTests) |t| {
+        const result = every(zstd.meta.Child(@TypeOf(t.input)), t.input, {}, t.func);
+        try testing.expectEqual(t.expected, result);
+    }
+
+    const IncludesCase = IndexOfTest(i32, bool);
+    const includesTests = [_]IncludesCase{
+        .{ .input = &[_]i32{ 1, 2, 3, 2, 5 }, .value = 5, .expected = true },
+        .{ .input = &[_]i32{ 1, 2, 3, 2, 5 }, .value = 9, .expected = false },
+    };
+    inline for (includesTests) |t| {
+        const result = includes(zstd.meta.Child(@TypeOf(t.input)), t.input, t.value);
+        try testing.expectEqual(t.expected, result);
+    }
+
+    const ValueIndexCase = IndexOfTest(i32, ?usize);
+    const indexOfTests = [_]ValueIndexCase{
+        .{ .input = &[_]i32{ 1, 2, 3, 2, 5 }, .value = 2, .expected = 1 },
+    };
+    inline for (indexOfTests) |t| {
+        const result = indexOf(zstd.meta.Child(@TypeOf(t.input)), t.input, t.value);
+        try testing.expectEqual(t.expected, result);
+    }
+
+    const lastIndexOfTests = [_]ValueIndexCase{
+        .{ .input = &[_]i32{ 1, 2, 3, 2, 5 }, .value = 2, .expected = 3 },
+    };
+    inline for (lastIndexOfTests) |t| {
+        const result = lastIndexOf(zstd.meta.Child(@TypeOf(t.input)), t.input, t.value);
+        try testing.expectEqual(t.expected, result);
+    }
+}
+
+pub fn SliceTest(comptime T: type) type {
+    return struct {
+        input: []const T,
+        start: isize,
+        end: ?isize,
+        expected: []const T,
+    };
+}
+
+test SliceTest {
+    const SliceCase = SliceTest(i32);
+    const tests = [_]SliceCase{
+        .{ .input = &[_]i32{ 0, 1, 2, 3, 4 }, .start = 1, .end = 4, .expected = &[_]i32{ 1, 2, 3 } },
+        .{ .input = &[_]i32{ 0, 1, 2, 3, 4 }, .start = -2, .end = null, .expected = &[_]i32{ 3, 4 } },
+        .{ .input = &[_]i32{ 0, 1, 2, 3, 4 }, .start = -3, .end = -1, .expected = &[_]i32{ 2, 3 } },
+    };
+
+    inline for (tests) |t| {
+        const result = try slice(zstd.meta.Child(@TypeOf(t.input)), testing.allocator, t.input, t.start, t.end);
+        defer testing.allocator.free(result);
+        try testing.expectEqualSlices(zstd.meta.Child(@TypeOf(t.expected)), t.expected, result);
+    }
 }
 
 test "concat flat flatMap join" {
