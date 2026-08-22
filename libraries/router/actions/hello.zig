@@ -24,16 +24,26 @@ pub const Hello = struct {
 
     pub fn exitMeta(comptime e: Exit) action.ExitMeta {
         return switch (e) {
-            .success => .{ .status = .ok, .response_type = .json },
-            .badRequest => .{ .status = .bad_request, .response_type = .json },
+            .success => .{
+                .status = .ok,
+                .response_type = .json,
+            },
+            .badRequest => .{
+                .status = .bad_request,
+                .response_type = .json,
+            },
         };
     }
 
     pub fn run(inputs: Inputs, exits: *action.Exits(@This())) !void {
         if (inputs.name.len == 0) {
-            return exits.send(.badRequest, .{ .error_message = "name required" });
+            return exits.send(.badRequest, .{
+                .error_message = "name required",
+            });
         }
-        return exits.send(.success, .{ .message = inputs.name });
+        return exits.send(.success, .{
+            .message = inputs.name,
+        });
     }
 };
 

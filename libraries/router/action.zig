@@ -5,7 +5,12 @@ const schema = @import("../validation/schema.zig");
 const engine = schema.engine;
 const testing = zstd.testing;
 
-pub const ResponseType = enum { json, text, redirect, empty };
+pub const ResponseType = enum {
+    json,
+    text,
+    redirect,
+    empty,
+};
 
 pub const ExitMeta = struct {
     status: zap.http.StatusCode = .ok,
@@ -28,7 +33,9 @@ pub const Capture = struct {
 };
 
 pub fn Exits(comptime Def: type) type {
-    // Def must have an Exit enum and a run function
+    @hasDecl(Def, "Exit") orelse @compileError(@typeName(Def) ++ " must have an Exit enum");
+    @hasDecl(Def, "exitMeta") orelse @compileError(@typeName(Def) ++ " must have an exitMeta function");
+
     const Exit = Def.Exit;
 
     return struct {

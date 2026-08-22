@@ -36,7 +36,10 @@ pub const RequestContext = struct {
         const value_owned = try self.allocator.dupe(u8, value);
         errdefer self.allocator.free(value_owned);
 
-        const gop = try self.values.getOrPut(self.allocator, key_owned);
+        const gop = try self.values.getOrPut(
+            self.allocator,
+            key_owned,
+        );
         if (gop.found_existing) {
             self.allocator.free(key_owned);
             self.allocator.free(gop.value_ptr.*);
