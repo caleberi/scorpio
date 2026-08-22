@@ -152,7 +152,7 @@ pub fn EnvironmentParser(comptime T: type) type {
     };
 }
 
-test "environment parser" {
+test EnvironmentParser {
     const io = zstd.testing.io;
     const Test = struct {
         name: []const u8,

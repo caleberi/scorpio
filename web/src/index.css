@@ -824,9 +824,9 @@ html[data-theme-mode="dark"] .lang-icon-field {
 
 @media (min-width: 768px) {
   .sponsor-wheel-slot {
-    --clip-size: 17.5rem;
+    --clip-size: 12.5rem;
     top: -2rem;
-    right: -30rem;
+    right: -9rem;
   }
 }
 
