@@ -33,8 +33,8 @@ pub const Capture = struct {
 };
 
 pub fn Exits(comptime Def: type) type {
-    @hasDecl(Def, "Exit") orelse @compileError(@typeName(Def) ++ " must have an Exit enum");
-    @hasDecl(Def, "exitMeta") orelse @compileError(@typeName(Def) ++ " must have an exitMeta function");
+    zstd.debug.assert(@hasDecl(Def, "Exit"));
+    zstd.debug.assert(@hasDecl(Def, "exitMeta"));
 
     const Exit = Def.Exit;
 
