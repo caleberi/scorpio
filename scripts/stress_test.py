@@ -16,6 +16,7 @@ import argparse
 import json
 import math
 import random
+import re
 import statistics
 import subprocess
 import threading
@@ -221,31 +222,36 @@ def probe_network(base_url: str, n: int = 12) -> dict:
     fmt = "%{time_namelookup} %{time_connect} %{time_appconnect} %{time_starttransfer} %{time_total} %{http_code}\\n"
 
     def parse_line(line: str) -> dict | None:
-        parts = line.strip().split()
-        if len(parts) < 6:
+        matches = re.findall(r"[\d.]+", line)
+        if len(matches) < 6:
             return None
-        dns, connect, tls, ttfb, total, code = parts[:6]
+        dns, connect, tls, ttfb, total, code = matches[-6:]
         return {
             "dns_ms": float(dns) * 1000,
             "connect_ms": float(connect) * 1000,
             "tls_ms": float(tls) * 1000,
             "ttfb_ms": float(ttfb) * 1000,
             "total_ms": float(total) * 1000,
-            "status": int(code) if code.isdigit() else 0,
+            "status": int(float(code)),
         }
 
-    cold: list[dict] = []
-    for _ in range(min(n, 8)):
-        raw = subprocess.check_output(
+    def curl_once() -> str:
+        return subprocess.check_output(
             ["curl", "-sS", "-o", "/dev/null", "-w", fmt, "--http1.1", "-A", USER_AGENT, url],
             text=True,
         )
-        parsed = parse_line(raw)
+
+    cold: list[dict] = []
+    for _ in range(min(n, 8)):
+        parsed = parse_line(curl_once())
         if parsed:
             cold.append(parsed)
 
-    reused_cmd = ["curl", "-sS", "-o", "/dev/null", "-w", fmt, "--http1.1", "-A", USER_AGENT]
-    reused_cmd.extend([url] * n)
+    reused_cmd = ["curl", "-sS", "--http1.1", "-A", USER_AGENT]
+    for i in range(n):
+        if i:
+            reused_cmd.append("--next")
+        reused_cmd.extend(["-o", "/dev/null", "-w", fmt, url])
     reused: list[dict] = []
     raw = subprocess.check_output(reused_cmd, text=True)
     for line in raw.splitlines():
