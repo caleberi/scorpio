@@ -41,9 +41,9 @@ pub fn Exits(comptime Def: type) type {
     return struct {
         const Self = @This();
 
-        allocator: zstd.mem.Allocator,
         request: ?zap.Request = null,
         capture: ?*Capture = null,
+        allocator: zstd.mem.Allocator,
         sent: bool = false,
 
         pub fn initZap(allocator: zstd.mem.Allocator, request: zap.Request) Self {
