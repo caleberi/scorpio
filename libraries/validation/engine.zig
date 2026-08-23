@@ -1,4 +1,8 @@
 const zstd = @import("std");
+const types = @import("types.zig");
+
+pub const Parameter = types.Parameter;
+pub const Value = types.Value;
 
 pub const ValidationError = error{
     ValidatorNotFound,
@@ -15,73 +19,9 @@ pub const Context = struct {
     allocator: zstd.mem.Allocator,
 };
 
-pub const Parameter = struct {
-    key: ?[]const u8,
-    value: []const u8,
-};
-
 pub const Validator = struct {
     name: []const u8,
     params: []const Parameter,
-};
-
-pub const Value = union(enum) {
-    int: i64,
-    float: f64,
-    boolean: bool,
-    string: []const u8,
-    other,
-
-    pub fn fromAny(value: anytype) Value {
-        const info = @typeInfo(@TypeOf(value));
-        return switch (info) {
-            .int, .comptime_int => .{ .int = @intCast(value) },
-            .float, .comptime_float => .{ .float = @floatCast(value) },
-            .bool => .{ .boolean = value },
-            .pointer => |ptr| blk: {
-                if (ptr.size == .slice and ptr.child == u8) {
-                    break :blk .{ .string = value };
-                }
-                break :blk .other;
-            },
-            else => .other,
-        };
-    }
-
-    pub fn asString(self: Value) ?[]const u8 {
-        return switch (self) {
-            .string => |s| s,
-            else => null,
-        };
-    }
-
-    pub fn asInt(self: Value) ?i64 {
-        return switch (self) {
-            .int => |i| i,
-            .string => |s| zstd.fmt.parseInt(i64, s, 10) catch null,
-            .float => |f| blk: {
-                if (f != @floor(f)) break :blk null;
-                break :blk @intFromFloat(f);
-            },
-            else => null,
-        };
-    }
-
-    pub fn asFloat(self: Value) ?f64 {
-        return switch (self) {
-            .float => |f| f,
-            .int => |i| @floatFromInt(i),
-            .string => |s| zstd.fmt.parseFloat(f64, s) catch null,
-            else => null,
-        };
-    }
-
-    pub fn asBool(self: Value) ?bool {
-        return switch (self) {
-            .boolean => |b| b,
-            else => null,
-        };
-    }
 };
 
 pub const ValidationReturnType = ValidationError!ValidationResult;
@@ -279,40 +219,28 @@ test "validator registration and execution" {
             .field_name = "name",
             .value = .{ .string = "John" },
             .validator_func = "min_length",
-            .params = &[_]Parameter{.{
-                .key = null,
-                .value = "5",
-            }},
+            .params = &[_]Parameter{.{ .int = 5 }},
             .expect_valid = false,
         },
         .{
             .field_name = "name",
             .value = .{ .string = "JohnDoe" },
             .validator_func = "max_length",
-            .params = &[_]Parameter{.{
-                .key = null,
-                .value = "10",
-            }},
+            .params = &[_]Parameter{.{ .int = 10 }},
             .expect_valid = true,
         },
         .{
             .field_name = "age",
             .value = .{ .int = 25 },
             .validator_func = "min",
-            .params = &[_]Parameter{.{
-                .key = null,
-                .value = "18",
-            }},
+            .params = &[_]Parameter{.{ .int = 18 }},
             .expect_valid = true,
         },
         .{
             .field_name = "age",
             .value = .{ .int = 150 },
             .validator_func = "max",
-            .params = &[_]Parameter{.{
-                .key = null,
-                .value = "100",
-            }},
+            .params = &[_]Parameter{.{ .int = 100 }},
             .expect_valid = false,
         },
         .{
@@ -332,7 +260,12 @@ test "validator registration and execution" {
     };
 
     for (testcases) |tc| {
-        const result = try engine.validate(tc.field_name, tc.value, tc.validator_func, tc.params);
+        const result = try engine.validate(
+            tc.field_name,
+            tc.value,
+            tc.validator_func,
+            tc.params,
+        );
         try zstd.testing.expectEqual(tc.expect_valid, result.valid);
     }
 }
@@ -408,8 +341,8 @@ test "validate field with multiple validators" {
     defer validators.deinit(allocator);
 
     try validators.append(allocator, .{ .name = "alpha", .params = &.{} });
-    try validators.append(allocator, .{ .name = "min_length", .params = &[_]Parameter{.{ .key = null, .value = "3" }} });
-    try validators.append(allocator, .{ .name = "max_length", .params = &[_]Parameter{.{ .key = null, .value = "50" }} });
+    try validators.append(allocator, .{ .name = "min_length", .params = &[_]Parameter{.{ .int = 3 }} });
+    try validators.append(allocator, .{ .name = "max_length", .params = &[_]Parameter{.{ .int = 50 }} });
 
     var messages = try zstd.ArrayList(ValidationMessage).initCapacity(allocator, 0);
     defer messages.deinit(allocator);

@@ -1,5 +1,6 @@
 const zstd = @import("std");
 const lex = @import("./lexer.zig");
+const types = @import("types.zig");
 const Lexer = lex.Lexer;
 const Token = lex.Token;
 const TokenType = lex.TokenType;
@@ -7,7 +8,32 @@ const Documentation = lex.Documentation;
 const Specification = lex.Specification;
 const Validator = lex.Validator;
 const ValidationMessage = lex.ValidationMessage;
-const Parameter = lex.Parameter;
+const Parameter = types.Parameter;
+
+fn parseParameter(value_token: Token, source: []const u8) !Parameter {
+    const lexeme = value_token.lexeme(source);
+    return switch (value_token.token_type) {
+        .number => parseNumberParam(lexeme),
+        .string_literal => .{ .string = lexeme },
+        .identifier => parseIdentParam(lexeme),
+        else => error.InvalidValue,
+    };
+}
+
+fn parseNumberParam(lexeme: []const u8) !Parameter {
+    if (zstd.mem.indexOfScalar(u8, lexeme, '.') != null) {
+        const f = zstd.fmt.parseFloat(f64, lexeme) catch return error.InvalidValue;
+        return .{ .float = f };
+    }
+    const n = zstd.fmt.parseInt(i64, lexeme, 10) catch return error.InvalidValue;
+    return .{ .int = n };
+}
+
+fn parseIdentParam(lexeme: []const u8) Parameter {
+    if (zstd.mem.eql(u8, lexeme, "true")) return .{ .boolean = true };
+    if (zstd.mem.eql(u8, lexeme, "false")) return .{ .boolean = false };
+    return .{ .string = lexeme };
+}
 
 pub const Parser = struct {
     tokens: []const Token,
@@ -203,16 +229,8 @@ pub const Parser = struct {
                     _ = self.advance();
 
                     const value_token = self.advance() orelse return error.MissingValue;
-                    const value = switch (value_token.token_type) {
-                        .number, .string_literal, .identifier => value_token.lexeme(self.source),
-                        else => return error.InvalidValue,
-                    };
-
                     const owned = try self.allocator.alloc(Parameter, 1);
-                    owned[0] = .{
-                        .key = null,
-                        .value = value,
-                    };
+                    owned[0] = try parseParameter(value_token, self.source);
                     params = owned;
                 }
             }
@@ -301,9 +319,14 @@ test "parser" {
     try zstd.testing.expectEqualStrings("name", documentation.specs[0].property);
     try zstd.testing.expectEqual(@as(usize, 3), documentation.specs[0].validators.len);
     try zstd.testing.expectEqual(@as(usize, 3), documentation.specs[0].messages.len);
+    try zstd.testing.expectEqual(@as(i64, 24), documentation.specs[0].validators[1].params[0].asInt().?);
+    try zstd.testing.expectEqual(@as(i64, 56), documentation.specs[0].validators[2].params[0].asInt().?);
     try zstd.testing.expectEqualStrings("age", documentation.specs[1].property);
     try zstd.testing.expectEqual(@as(usize, 3), documentation.specs[1].validators.len);
+    try zstd.testing.expectEqual(@as(i64, 10), documentation.specs[1].validators[1].params[0].asInt().?);
+    try zstd.testing.expectEqual(@as(i64, 130), documentation.specs[1].validators[2].params[0].asInt().?);
     try zstd.testing.expectEqualStrings("email", documentation.specs[2].property);
+    try zstd.testing.expectEqualStrings(".com,.it,.edu", documentation.specs[2].validators[1].params[0].asString().?);
 }
 
 test "parser usage on struct" {

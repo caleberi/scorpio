@@ -528,20 +528,11 @@ fn validateLeaf(
             }
         }
 
-        var params_buf: [32]engine.Parameter = undefined;
-        if (rule.params.len > params_buf.len) return error.TooManyParameters;
-        for (rule.params, 0..) |param, i| {
-            params_buf[i] = .{
-                .key = param.key,
-                .value = param.value,
-            };
-        }
-
         const result = eng.validate(
             field_name,
             value,
             rule.name,
-            params_buf[0..rule.params.len],
+            rule.params,
         ) catch |err| switch (err) {
             error.ValidatorNotFound => return error.ValidatorNotFound,
             error.InvalidParameterCount => return error.InvalidParameterCount,
@@ -561,7 +552,7 @@ fn validateLeaf(
 
 fn checkIntRange(value: i64, rule: lexer.Validator) SchemaError!?[]const u8 {
     if (rule.params.len == 0) return error.InvalidParameterCount;
-    const bound = zstd.fmt.parseInt(i64, rule.params[0].value, 10) catch return error.InvalidParameterType;
+    const bound = rule.params[0].asInt() orelse return error.InvalidParameterType;
     if (zstd.mem.eql(u8, rule.name, "min") and value < bound) return "Value is below minimum";
     if (zstd.mem.eql(u8, rule.name, "max") and value > bound) return "Value exceeds maximum";
     return null;
@@ -932,7 +923,10 @@ test "schema" {
                             const s = ctx.value.asString() orelse {
                                 return engine.ValidationResult.failure("suffix mismatch");
                             };
-                            if (zstd.mem.endsWith(u8, s, ctx.params[0].value)) {
+                            const suffix = ctx.params[0].asString() orelse {
+                                return error.InvalidParameterType;
+                            };
+                            if (zstd.mem.endsWith(u8, s, suffix)) {
                                 return engine.ValidationResult.success();
                             }
                             return engine.ValidationResult.failure("suffix mismatch");

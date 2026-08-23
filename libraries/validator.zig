@@ -245,10 +245,7 @@ pub fn Validator(comptime T: type) type {
                     for (validators.items) |v| {
                         self.allocator.free(v.name);
                         for (v.params) |pm| {
-                            if (pm.key) |_| {
-                                self.allocator.free(pm.key.?);
-                            }
-                            self.allocator.free(pm.value);
+                            pm.deinit(self.allocator);
                         }
                         self.allocator.free(v.params);
                     }
@@ -268,13 +265,15 @@ pub fn Validator(comptime T: type) type {
                     errdefer self.allocator.free(validator_name);
 
                     var params = try self.allocator.alloc(engine.Parameter, v.params.len);
-                    errdefer self.allocator.free(params);
+                    var params_owned: usize = 0;
+                    errdefer {
+                        for (params[0..params_owned]) |pm| pm.deinit(self.allocator);
+                        self.allocator.free(params);
+                    }
 
                     for (v.params, 0..) |param, i| {
-                        params[i] = engine.Parameter{
-                            .key = if (param.key) |k| try self.allocator.dupe(u8, k) else null,
-                            .value = try self.allocator.dupe(u8, param.value),
-                        };
+                        params[i] = try param.dupe(self.allocator);
+                        params_owned += 1;
                     }
 
                     try validators.append(self.allocator, engine.Validator{
@@ -443,7 +442,11 @@ test "complete engine validation" {
                     return engine.ValidationResult.failure("Value must be a string");
                 };
 
-                var suffixes = zstd.mem.splitSequence(u8, context.params[0].value, ",");
+                const allowed = context.params[0].asString() orelse {
+                    return engine.ValidationError.InvalidParameterType;
+                };
+
+                var suffixes = zstd.mem.splitSequence(u8, allowed, ",");
                 while (suffixes.next()) |suffix| {
                     const trimmed_suffix = zstd.mem.trim(u8, suffix, " \t");
                     if (zstd.mem.endsWith(u8, field_str, trimmed_suffix)) {
@@ -455,7 +458,7 @@ test "complete engine validation" {
                 const error_msg = try zstd.fmt.bufPrint(
                     &error_buf,
                     "Value does not end with any of: {s}",
-                    .{context.params[0].value},
+                    .{allowed},
                 );
                 return engine.ValidationResult.failure(error_msg);
             }

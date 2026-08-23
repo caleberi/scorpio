@@ -1,4 +1,5 @@
 const zstd = @import("std");
+const types = @import("types.zig");
 
 fn startsWithAt(source: []const u8, index: usize, sequence: []const u8) bool {
     return index + sequence.len <= source.len and
@@ -197,10 +198,7 @@ pub const Lexer = struct {
     }
 };
 
-pub const Parameter = struct {
-    key: ?[]const u8,
-    value: []const u8,
-};
+pub const Parameter = types.Parameter;
 
 pub const Validator = struct {
     name: []const u8,
@@ -250,11 +248,12 @@ pub const Specification = struct {
                 if (validator.params.len > 0) {
                     zstd.debug.print(" = ", .{});
                     for (validator.params, 0..) |param, i| {
-                        if (param.key) |key| {
-                            zstd.debug.print("{s}:", .{key});
+                        switch (param) {
+                            .int => |n| zstd.debug.print("{d}", .{n}),
+                            .float => |f| zstd.debug.print("{d}", .{f}),
+                            .boolean => |b| zstd.debug.print("{}", .{b}),
+                            .string => |s| zstd.debug.print("{s}", .{s}),
                         }
-
-                        zstd.debug.print("{s}", .{param.value});
                         if (i < validator.params.len - 1) {
                             zstd.debug.print(", ", .{});
                         }

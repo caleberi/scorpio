@@ -10,6 +10,7 @@ pub const processor = struct {
 };
 
 pub const validation = struct {
+    pub const types = @import("validation/types.zig");
     pub const schema = @import("validation/schema.zig");
     pub const engine = @import("validation/engine.zig");
     pub const lexer = @import("validation/lexer.zig");
@@ -32,6 +33,7 @@ pub const fs = @import("compat_fs.zig");
 pub const validator = @import("validator.zig");
 
 test {
+    _ = validation.types;
     _ = validation.schema;
     _ = validation.engine;
     _ = validation.lexer;
