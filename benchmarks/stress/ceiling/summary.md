@@ -5,7 +5,7 @@
 - Requests: **77724** (77724 ok, 0 errors, 0.00% error rate)
 - Throughput: **509.8 req/s**, **2851.8 KiB/s**
 - Latency ms: min 71.2 · p50 **111.4** · p95 **305.9** · p99 427.9 · max 1048.2
-- Status codes: `{200: 75375, 404: 2349}`
+- Status codes: `{'200': 75375, '404': 2349}`
 
 ## Endpoints
 

@@ -161,6 +161,7 @@ def latency_series(samples: list[Sample], bucket_s: float = 1.0) -> list[dict]:
                 "p50": lat.get("p50"),
                 "p95": lat.get("p95"),
                 "p99": lat.get("p99"),
+                "kib_s": (stats.get("bytes") or 0) / 1024.0 / bucket_s,
                 "concurrency": max((s.concurrency for s in group), default=0),
             }
         )
@@ -856,8 +857,19 @@ def render_report(data: dict) -> str:
   <div class="cards">{card_html}</div>
   <div class="grid">
     <div class="panel">{svg_scatter_lines(samples, "Latency over time")}</div>
-    <div class="panel">{svg_line(bucket_series(samples, "rps"), "Throughput over time", "time (s)", "requests / s")}</div>
-    <div class="panel">{svg_line(bucket_series(samples, "kib_s"), "Transfer speed over time", "time (s)", "KiB / s", "#f5c14a")}</div>
+    <div class="panel">{svg_line(
+        [(p["t"], p["rps"]) for p in (data.get("series") or [])] or bucket_series(samples, "rps"),
+        "Throughput over time",
+        "time (s)",
+        "requests / s",
+    )}</div>
+    <div class="panel">{svg_line(
+        [(p["t"], p.get("kib_s") or 0) for p in (data.get("series") or [])] or bucket_series(samples, "kib_s"),
+        "Transfer speed over time",
+        "time (s)",
+        "KiB / s",
+        "#f5c14a",
+    )}</div>
     <div class="panel">{svg_histogram([s["latency_ms"] for s in samples], "Latency distribution")}</div>
     <div class="panel">{svg_bars(endpoints, [("p50", p50s, "#7eb6ff"), ("p95", p95s, "#f5c14a")], "Latency by endpoint", "ms")}</div>
     <div class="panel">{svg_bars(endpoints, [("rps", rps_e, "#3dd68c")], "Observed request rate by endpoint", "req / s")}</div>
@@ -1038,7 +1050,8 @@ def write_pngs(data: dict, out_dir: Path) -> list[Path]:
     ax.legend(loc="upper right")
     save(fig, "latency-over-time.png")
 
-    rps = bucket_series(samples, "rps")
+    series = data.get("series") or []
+    rps = [(p["t"], p["rps"]) for p in series] if series else bucket_series(samples, "rps")
     fig, ax = plt.subplots(figsize=(10.2, 3.4))
     ax.fill_between([x for x, _ in rps], [y for _, y in rps], color="#3dd68c", alpha=0.25)
     ax.plot([x for x, _ in rps], [y for _, y in rps], color="#3dd68c")
@@ -1048,7 +1061,7 @@ def write_pngs(data: dict, out_dir: Path) -> list[Path]:
     ax.grid(True, alpha=0.5)
     save(fig, "throughput-over-time.png")
 
-    kib = bucket_series(samples, "kib_s")
+    kib = [(p["t"], p.get("kib_s") or 0) for p in series] if series else bucket_series(samples, "kib_s")
     fig, ax = plt.subplots(figsize=(10.2, 3.4))
     ax.fill_between([x for x, _ in kib], [y for _, y in kib], color="#f5c14a", alpha=0.25)
     ax.plot([x for x, _ in kib], [y for _, y in kib], color="#f5c14a")
