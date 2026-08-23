@@ -5,6 +5,7 @@ const common = @import("common");
 const EnvironmentParser = libraries.dotenv.loader.EnvironmentParser;
 const Validator = libraries.validator.Validator;
 const engine = libraries.validation.engine;
+const ValidationReturnType = engine.ValidationError!engine.ValidationResult;
 
 pub const ServerConfig = struct {
     pub const doc: []const u8 =
@@ -146,7 +147,7 @@ pub const Loaded = struct {
     }
 };
 
-fn urlValidator(ctx: engine.Context) engine.ValidationError!engine.ValidationResult {
+fn urlValidator(ctx: engine.Context) ValidationReturnType {
     const candidate = ctx.value.asString() orelse {
         return engine.ValidationResult.failure("Failed to validate URL format");
     };
