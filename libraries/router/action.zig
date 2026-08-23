@@ -404,7 +404,8 @@ test "action custom validators can be registered on the definition" {
                 const s = ctx.value.asString() orelse {
                     return engine.ValidationResult.failure("must be a string");
                 };
-                if (zstd.mem.endsWith(u8, s, ctx.params[0].value)) {
+                const suffix = ctx.params[0].asString() orelse return error.InvalidParameterType;
+                if (zstd.mem.endsWith(u8, s, suffix)) {
                     return engine.ValidationResult.success();
                 }
                 return engine.ValidationResult.failure("suffix mismatch");
