@@ -689,6 +689,143 @@ def write_summary_md(data: dict) -> str:
     return "\n".join(lines)
 
 
+def write_pngs(data: dict, out_dir: Path) -> list[Path]:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return []
+
+    samples = data["samples"]
+    endpoints = list(data["by_endpoint"].keys())
+    phases = [p["name"] for p in data["phases"] if p["name"] in data["by_phase"]]
+    if "warmup" in data["by_phase"]:
+        phases = ["warmup", *phases]
+    graphs = out_dir / "graphs"
+    graphs.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+
+    plt.rcParams.update(
+        {
+            "figure.facecolor": "#0f1419",
+            "axes.facecolor": "#151b22",
+            "axes.edgecolor": "#243040",
+            "axes.labelcolor": "#c5d0db",
+            "text.color": "#e8eef4",
+            "xtick.color": "#8b9aab",
+            "ytick.color": "#8b9aab",
+            "grid.color": "#243040",
+            "font.size": 10,
+        }
+    )
+
+    def save(fig, name: str) -> None:
+        path = graphs / name
+        fig.tight_layout()
+        fig.savefig(path, dpi=140, bbox_inches="tight")
+        plt.close(fig)
+        written.append(path)
+
+    fig, ax = plt.subplots(figsize=(10.2, 3.8))
+    ok = [s for s in samples if s["ok"]]
+    err = [s for s in samples if not s["ok"]]
+    if ok:
+        ax.scatter([s["t"] for s in ok], [s["latency_ms"] for s in ok], s=4, c="#3dd68c", alpha=0.35, label="ok")
+    if err:
+        ax.scatter([s["t"] for s in err], [s["latency_ms"] for s in err], s=8, c="#ff5d5d", alpha=0.8, label="error")
+    cap = percentile([s["latency_ms"] for s in samples], 99.5) or 1
+    ax.set_ylim(0, cap * 1.2)
+    ax.set_title("Latency over time")
+    ax.set_xlabel("time (s)")
+    ax.set_ylabel("latency (ms)")
+    ax.grid(True, alpha=0.5)
+    ax.legend(loc="upper right")
+    save(fig, "latency-over-time.png")
+
+    rps = bucket_series(samples, "rps")
+    fig, ax = plt.subplots(figsize=(10.2, 3.4))
+    ax.fill_between([x for x, _ in rps], [y for _, y in rps], color="#3dd68c", alpha=0.25)
+    ax.plot([x for x, _ in rps], [y for _, y in rps], color="#3dd68c")
+    ax.set_title("Throughput over time")
+    ax.set_xlabel("time (s)")
+    ax.set_ylabel("requests / s")
+    ax.grid(True, alpha=0.5)
+    save(fig, "throughput-over-time.png")
+
+    kib = bucket_series(samples, "kib_s")
+    fig, ax = plt.subplots(figsize=(10.2, 3.4))
+    ax.fill_between([x for x, _ in kib], [y for _, y in kib], color="#f5c14a", alpha=0.25)
+    ax.plot([x for x, _ in kib], [y for _, y in kib], color="#f5c14a")
+    ax.set_title("Transfer speed over time")
+    ax.set_xlabel("time (s)")
+    ax.set_ylabel("KiB / s")
+    ax.grid(True, alpha=0.5)
+    save(fig, "transfer-speed-over-time.png")
+
+    fig, ax = plt.subplots(figsize=(10.2, 3.4))
+    vals = [s["latency_ms"] for s in samples]
+    hi = percentile(vals, 99) or max(vals)
+    ax.hist([v for v in vals if v <= hi], bins=28, color="#5b8def", edgecolor="#0f1419")
+    ax.set_title("Latency distribution")
+    ax.set_xlabel("latency (ms)")
+    ax.set_ylabel("count")
+    ax.grid(True, axis="y", alpha=0.5)
+    save(fig, "latency-histogram.png")
+
+    fig, ax = plt.subplots(figsize=(10.2, 3.8))
+    x = range(len(endpoints))
+    p50 = [data["by_endpoint"][e]["latency_ms"]["p50"] or 0 for e in endpoints]
+    p95 = [data["by_endpoint"][e]["latency_ms"]["p95"] or 0 for e in endpoints]
+    ax.bar([i - 0.18 for i in x], p50, width=0.36, color="#7eb6ff", label="p50")
+    ax.bar([i + 0.18 for i in x], p95, width=0.36, color="#f5c14a", label="p95")
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(endpoints, rotation=20, ha="right")
+    ax.set_title("Latency by endpoint")
+    ax.set_ylabel("ms")
+    ax.legend()
+    ax.grid(True, axis="y", alpha=0.5)
+    save(fig, "latency-by-endpoint.png")
+
+    fig, ax = plt.subplots(figsize=(10.2, 3.6))
+    ax.bar(endpoints, [data["by_endpoint"][e]["rps"] for e in endpoints], color="#3dd68c")
+    ax.set_title("Observed request rate by endpoint")
+    ax.set_ylabel("req / s")
+    ax.tick_params(axis="x", rotation=20)
+    ax.grid(True, axis="y", alpha=0.5)
+    save(fig, "rps-by-endpoint.png")
+
+    fig, ax = plt.subplots(figsize=(10.2, 3.6))
+    ax.bar(endpoints, [data["by_endpoint"][e]["throughput_kib_s"] for e in endpoints], color="#c084fc")
+    ax.set_title("Transfer speed by endpoint")
+    ax.set_ylabel("KiB / s")
+    ax.tick_params(axis="x", rotation=20)
+    ax.grid(True, axis="y", alpha=0.5)
+    save(fig, "transfer-by-endpoint.png")
+
+    fig, ax = plt.subplots(figsize=(10.2, 3.6))
+    x = range(len(phases))
+    ax.bar([i - 0.18 for i in x], [data["by_phase"][p]["latency_ms"]["p95"] or 0 for p in phases], width=0.36, color="#f5c14a", label="p95 ms")
+    ax.bar([i + 0.18 for i in x], [data["by_phase"][p]["rps"] for p in phases], width=0.36, color="#3dd68c", label="rps")
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(phases)
+    ax.set_title("Phase: p95 latency vs throughput")
+    ax.legend()
+    ax.grid(True, axis="y", alpha=0.5)
+    save(fig, "phase-latency-vs-throughput.png")
+
+    codes = data["overall"].get("status_codes") or {}
+    fig, ax = plt.subplots(figsize=(7.2, 3.4))
+    ax.bar([str(k) for k in codes], list(codes.values()), color="#5b8def")
+    ax.set_title("HTTP status codes")
+    ax.set_ylabel("count")
+    ax.grid(True, axis="y", alpha=0.5)
+    save(fig, "status-codes.png")
+
+    return written
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stress-test a running Hamilton API")
     parser.add_argument("--base-url", default=DEFAULT_BASE)
@@ -700,6 +837,11 @@ def parse_args() -> argparse.Namespace:
         choices=("quick", "default", "heavy"),
         default="default",
         help="quick ≈ 25s, default ≈ 55s, heavy ≈ 90s",
+    )
+    parser.add_argument(
+        "--replay",
+        metavar="RESULTS_JSON",
+        help="Rebuild report and graphs from a previous results.json without hitting the server",
     )
     return parser.parse_args()
 
@@ -726,27 +868,37 @@ def phases_for(profile: str) -> list[Phase]:
     ]
 
 
-def main() -> int:
-    args = parse_args()
-    config = RunConfig(
-        base_url=args.base_url,
-        phases=phases_for(args.profile),
-        timeout_s=args.timeout,
-        mix=DEFAULT_MIX,
-        warmup=args.warmup,
-    )
-    print(f"target={config.base_url} profile={args.profile}", flush=True)
-    client = StressClient(config)
-    data = client.run()
-    out = Path(args.output)
+def write_outputs(data: dict, out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / "results.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
     (out / "report.html").write_text(render_report(data), encoding="utf-8")
     (out / "summary.md").write_text(write_summary_md(data), encoding="utf-8")
-    overall = data["overall"]
-    lat = overall.get("latency_ms") or {}
+    pngs = write_pngs(data, out)
     print(write_summary_md(data))
     print(f"wrote {out / 'report.html'}", flush=True)
+    for path in pngs:
+        print(f"wrote {path}", flush=True)
+
+
+def main() -> int:
+    args = parse_args()
+    out = Path(args.output)
+    if args.replay:
+        data = json.loads(Path(args.replay).read_text(encoding="utf-8"))
+        print(f"replay={args.replay} target={data.get('target')}", flush=True)
+    else:
+        config = RunConfig(
+            base_url=args.base_url,
+            phases=phases_for(args.profile),
+            timeout_s=args.timeout,
+            mix=DEFAULT_MIX,
+            warmup=args.warmup,
+        )
+        print(f"target={config.base_url} profile={args.profile}", flush=True)
+        data = StressClient(config).run()
+    write_outputs(data, out)
+    overall = data["overall"]
+    lat = overall.get("latency_ms") or {}
     print(
         f"RESULT count={overall['count']} rps={overall['rps']:.1f} "
         f"p50={lat.get('p50'):.1f} p95={lat.get('p95'):.1f} errors={overall['error_rate']*100:.2f}%",
