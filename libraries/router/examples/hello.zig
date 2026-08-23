@@ -1,6 +1,7 @@
 const std = @import("std");
 const action = @import("../action.zig");
 const bind = @import("../bind.zig");
+const engine = @import("../../validation/engine.zig");
 const testing = std.testing;
 
 pub const Hello = struct {
@@ -11,13 +12,30 @@ pub const Hello = struct {
         pub const doc: []const u8 =
             \\// @validation
             \\// @property: name
-            \\//   @validator: @required,@min_length=1
+            \\//   @validator: @required,@min_length=1,@endswith=".com"
             \\//   @messages:
             \\//     @required - "Name is required"
             \\//     @min_length - "Name must be at least 1 character"
+            \\//     @endswith - "Name must end with .com"
         ;
 
-        name: []const u8 = "world",
+        name: []const u8 = "world.com",
+    };
+
+    pub const validators = struct {
+        pub const endswith = struct {
+            pub fn validate(ctx: engine.Context) engine.ValidationReturnType {
+                if (ctx.params.len != 1) return error.InvalidParameterCount;
+                const value = ctx.value.asString() orelse {
+                    return engine.ValidationResult.failure("must be a string");
+                };
+                const suffix = ctx.params[0].asString() orelse return error.InvalidParameterType;
+                if (std.mem.endsWith(u8, value, suffix)) {
+                    return engine.ValidationResult.success();
+                }
+                return engine.ValidationResult.failure("suffix mismatch");
+            }
+        }.validate;
     };
 
     pub const Exit = enum { success, badRequest };
@@ -70,7 +88,7 @@ test "hello action path name" {
         .path = "/hello/ada",
     };
     defer ctx.deinit();
-    try ctx.put("name", "ada");
+    try ctx.put("name", "ada.com");
 
     var capture: action.Capture = .{};
     defer capture.deinit();

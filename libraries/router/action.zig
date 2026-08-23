@@ -33,9 +33,6 @@ pub const Capture = struct {
 };
 
 pub fn Exits(comptime Def: type) type {
-    zstd.debug.assert(@hasDecl(Def, "Exit"));
-    zstd.debug.assert(@hasDecl(Def, "exitMeta"));
-
     const Exit = Def.Exit;
 
     return struct {
@@ -94,11 +91,7 @@ pub fn Exits(comptime Def: type) type {
     };
 }
 
-fn renderPayload(
-    allocator: zstd.mem.Allocator,
-    comptime response_type: ResponseType,
-    payload: anytype,
-) ![]u8 {
+fn renderPayload(allocator: zstd.mem.Allocator, comptime response_type: ResponseType, payload: anytype) ![]u8 {
     return switch (response_type) {
         .empty => try allocator.alloc(u8, 0),
         .text, .redirect => try allocator.dupe(u8, asTextPayload(payload)),
@@ -123,6 +116,7 @@ fn extraValidatorNames(comptime Def: type) []const []const u8 {
     }
     const decls = info.@"struct".decls;
     if (decls.len == 0) return &.{};
+
     comptime var names: [decls.len][]const u8 = undefined;
     inline for (decls, 0..) |decl, i| {
         names[i] = decl.name;

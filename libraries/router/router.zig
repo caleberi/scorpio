@@ -37,22 +37,10 @@ pub const Router = struct {
 
     pub fn register(self: *Router, method: Method, pattern: []const u8, comptime Def: type) !void {
         const handler = struct {
-            fn handle(
-                allocator: Allocator,
-                request: zap.Request,
-                path_params: *const match.PathParams,
-            ) !void {
-                var ctx = try bind.RequestContext.fromZap(
-                    allocator,
-                    request,
-                    path_params,
-                );
+            fn handle(allocator: Allocator, request: zap.Request, path_params: *const match.PathParams) !void {
+                var ctx = try bind.RequestContext.fromZap(allocator, request, path_params);
                 defer ctx.deinit();
-                try action.Action(Def).handle(
-                    allocator,
-                    request,
-                    &ctx,
-                );
+                try action.Action(Def).handle(allocator, request, &ctx);
             }
         }.handle;
 
@@ -82,12 +70,7 @@ pub const Router = struct {
             var path_params: match.PathParams = .{};
             defer match.freePathParams(arena_allocator, &path_params);
 
-            if (!try match.matchPath(
-                arena_allocator,
-                route.pattern,
-                path,
-                &path_params,
-            )) {
+            if (!try match.matchPath(arena_allocator, route.pattern, path, &path_params)) {
                 continue;
             }
 
