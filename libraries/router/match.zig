@@ -1,7 +1,6 @@
 const std = @import("std");
 const zap = @import("zap");
 const testing = std.testing;
-
 pub const Method = zap.http.Method;
 
 pub const Value = union(enum) {

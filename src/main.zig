@@ -30,12 +30,7 @@ pub fn main(init: zstd.process.Init) !void {
     const cfg = loaded.config;
     const uri = try zstd.Uri.parse(cfg.db.url);
 
-    var pool = pg.Pool.initUri(
-        io,
-        allocator,
-        uri,
-        .{ .size = 5 },
-    ) catch |err| {
+    var pool = pg.Pool.initUri(io, allocator, uri, .{ .size = cfg.db.pool_size }) catch |err| {
         zstd.log.err("failed to connect to postgres at {s}: {}", .{ cfg.db.url, err });
         zstd.log.err("start it with `docker compose up -d postgres`, then retry", .{});
         return err;

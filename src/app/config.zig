@@ -63,7 +63,7 @@ pub const BlogConfig = struct {
     input_dir: []const u8 = "pages/blog",
     pack_dir: []const u8 = "packed/blog",
     staging_dir: []const u8 = "packed/staging",
-    prefetch_neighbors: i32 = 1,
+    prefetch_neighbors: i32 = 3,
 };
 
 pub const CloudinaryConfig = struct {
@@ -115,7 +115,7 @@ pub const DatabaseConfig = struct {
     ;
 
     url: []const u8,
-    pool_size: i32 = 5,
+    pool_size: u16 = 5,
 };
 
 pub const AppConfig = struct {
