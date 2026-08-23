@@ -5,7 +5,7 @@ pub const Value = match.Value;
 pub const PathParams = match.PathParams;
 pub const router = @import("router.zig");
 pub const actions = struct {
-    pub const hello = @import("actions/hello.zig");
+    pub const hello = @import("examples/hello.zig");
 };
 
 pub const Router = router.Router;
