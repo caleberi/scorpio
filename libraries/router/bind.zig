@@ -15,6 +15,7 @@ fn isJsonBody(body: []const u8) bool {
 pub const RequestContext = struct {
     allocator: std.mem.Allocator,
     method: match.Method,
+    request: ?zap.Request,
     path: []const u8,
     /// Flattened path + query + body params. Values owned by this context.
     values: std.StringHashMapUnmanaged([]const u8) = .{},
@@ -64,6 +65,7 @@ pub const RequestContext = struct {
             .allocator = allocator,
             .method = match.methodFromRequest(request.method),
             .path = request.path orelse "/",
+            .request = request,
         };
         errdefer ctx.deinit();
 

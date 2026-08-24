@@ -149,12 +149,7 @@ pub fn Action(comptime Def: type) type {
     return struct {
         pub const definition = Def;
 
-        pub fn resolve(
-            allocator: zstd.mem.Allocator,
-            ctx: *const bind.RequestContext,
-            request: ?zap.Request,
-            capture: ?*Capture,
-        ) !void {
+        pub fn resolve(allocator: zstd.mem.Allocator, ctx: *const bind.RequestContext, request: ?zap.Request, capture: ?*Capture) !void {
             const inputs = bind.bind(Def.Inputs, ctx) catch |err| {
                 try sendBindError(allocator, request, capture, err);
                 return;
