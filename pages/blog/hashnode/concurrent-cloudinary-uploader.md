@@ -101,6 +101,6 @@ PASS
 
 In short, Kloudinary makes integrating with Cloudinary very simple. It is not all done yet but it can be better.
 
-Sorry for boring you with the initial details. I just wanted to show that initial ideas might not work, but latter ones might succeed.
+Sorry for boring you with the initial details. I just wanted to show that initial ideas might not work, but later ones might succeed.
 
 Feel free to try out the library and also raise issues or PR to make it better.
