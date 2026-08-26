@@ -7,6 +7,7 @@ date: '2026-08-15'
 topics:
   - 'Database'
   - 'Engineering'
+  - 'C'
 type: 'Blog'
 image: 'https://cdn.hashnode.com/uploads/covers/5f8c625883db9130bf5bc43a/56eeb554-83f7-471b-a75f-cf34eab2fe48.png'
 ---
