@@ -48,7 +48,7 @@ The paper provides a nuanced exploration of the intricate interactions between h
 
 
 
- Do, take time to read the ![paper](https://assets.bitbashing.io/papers/concurrency-primer.pdf).
+Do, take time to read the [paper](https://assets.bitbashing.io/papers/concurrency-primer.pdf).
 
 
 
