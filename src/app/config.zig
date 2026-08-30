@@ -196,8 +196,7 @@ pub fn load(allocator: zstd.mem.Allocator, filepath: []const u8) !Loaded {
 
     var vd = try Validator(AppConfig).init(allocator);
     defer vd.deinit();
-    try vd.registerValidators();
-    try vd.registerMessages();
+
     try vd.registerCustomValidator("url", urlValidator);
     try vd.validate(config.*, null);
 
