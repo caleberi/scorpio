@@ -22,7 +22,7 @@ pub const Delete = struct {
     }
 
     pub fn run(inputs: Inputs, exits: *action.Exits(@This())) !void {
-        const app = state.get();
+        const app = exits.deps(state.State);
         const blog_id = (try app.db.blogIdBySlug(exits.allocator, inputs.slug)) orelse {
             return exits.send(.notFound, .{ .error_message = "This post isn't set up for comments yet." });
         };
