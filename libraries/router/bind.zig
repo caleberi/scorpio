@@ -15,7 +15,8 @@ fn isJsonBody(body: []const u8) bool {
 pub const RequestContext = struct {
     allocator: std.mem.Allocator,
     method: match.Method,
-    request: ?zap.Request,
+    request: ?zap.Request = null,
+    dependencies: ?*anyopaque = null,
     path: []const u8,
     /// Flattened path + query + body params. Values owned by this context.
     values: std.StringHashMapUnmanaged([]const u8) = .{},
@@ -28,6 +29,11 @@ pub const RequestContext = struct {
         }
         self.values.deinit(self.allocator);
         self.* = undefined;
+    }
+
+    pub fn getDependencies(self: *const RequestContext, comptime T: type) *T {
+        const ptr = self.dependencies orelse unreachable;
+        return @ptrCast(@alignCast(ptr));
     }
 
     pub fn put(self: *RequestContext, key: []const u8, value: []const u8) !void {
@@ -60,12 +66,14 @@ pub const RequestContext = struct {
         allocator: std.mem.Allocator,
         request: zap.Request,
         path_params: *const match.PathParams,
+        dependencies: ?*anyopaque,
     ) !RequestContext {
         var ctx = RequestContext{
             .allocator = allocator,
             .method = match.methodFromRequest(request.method),
             .path = request.path orelse "/",
             .request = request,
+            .dependencies = dependencies,
         };
         errdefer ctx.deinit();
 
@@ -205,4 +213,16 @@ test "bind missing required field" {
         error.MissingField,
         bind(Inputs, &ctx),
     );
+}
+
+test "getDependencies casts stored pointer" {
+    var payload: u32 = 42;
+    var ctx = RequestContext{
+        .allocator = testing.allocator,
+        .method = .GET,
+        .path = "/",
+        .dependencies = &payload,
+    };
+    defer ctx.deinit();
+    try testing.expectEqual(@as(u32, 42), ctx.getDependencies(u32).*);
 }

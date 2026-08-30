@@ -1,10 +1,11 @@
+pub const actions = struct {
+    pub const hello = @import("examples/hello.zig");
+    pub const auth = @import("examples/auth.zig");
+};
 pub const action = @import("action.zig");
 pub const bind = @import("bind.zig");
 pub const match = @import("match.zig");
 pub const router = @import("router.zig");
-pub const actions = struct {
-    pub const hello = @import("examples/hello.zig");
-};
 
 pub const Value = match.Value;
 pub const PathParams = match.PathParams;
@@ -20,4 +21,5 @@ test {
     _ = match;
     _ = router;
     _ = actions.hello;
+    _ = actions.auth;
 }

@@ -41,21 +41,28 @@ pub fn Exits(comptime Def: type) type {
         request: ?zap.Request = null,
         capture: ?*Capture = null,
         allocator: zstd.mem.Allocator,
+        context: *const bind.RequestContext,
         sent: bool = false,
 
-        pub fn initZap(allocator: zstd.mem.Allocator, request: zap.Request) Self {
+        pub fn initZap(allocator: zstd.mem.Allocator, request: zap.Request, context: *const bind.RequestContext) Self {
             return .{
                 .allocator = allocator,
                 .request = request,
+                .context = context,
             };
         }
 
-        pub fn initCapture(allocator: zstd.mem.Allocator, capture: *Capture) Self {
+        pub fn initCapture(allocator: zstd.mem.Allocator, capture: *Capture, context: *const bind.RequestContext) Self {
             capture.allocator = allocator;
             return .{
                 .allocator = allocator,
                 .capture = capture,
+                .context = context,
             };
+        }
+
+        pub fn deps(self: *const Self, comptime T: type) *T {
+            return self.context.getDependencies(T);
         }
 
         pub fn send(self: *Self, comptime exit: Exit, payload: anytype) !void {
@@ -199,9 +206,9 @@ pub fn Action(comptime Def: type) type {
             }
 
             var exits: Exits(Def) = if (capture) |cap|
-                Exits(Def).initCapture(allocator, cap)
+                Exits(Def).initCapture(allocator, cap, ctx)
             else if (request) |req|
-                Exits(Def).initZap(allocator, req)
+                Exits(Def).initZap(allocator, req, ctx)
             else
                 return error.NoRequest;
 

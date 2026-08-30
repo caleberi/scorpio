@@ -11,22 +11,34 @@ const HandlerFn = *const fn (
     allocator: Allocator,
     request: zap.Request,
     path_params: *const match.PathParams,
+    dependencies: *anyopaque,
 ) anyerror!void;
 
 const Route = struct {
     method: Method,
     pattern: []const u8,
-    handler: HandlerFn,
+    handler: HandlerFn, // should be an interface to a chain of known
 };
+
+fn isAction(comptime T: type) bool {
+    const hasRun = @hasDecl(T, "run");
+    const hasExit = @hasDecl(T, "Exit");
+    const hasInputs = @hasDecl(T, "Inputs");
+    return hasRun and hasExit and hasInputs;
+}
 
 pub const Router = struct {
     allocator: Allocator,
+    dependencies: *anyopaque,
     routes: zstd.ArrayList(Route) = .empty,
 
     var active: ?*Router = null;
 
-    pub fn init(allocator: Allocator) Router {
-        return .{ .allocator = allocator };
+    pub fn init(allocator: Allocator, dependencies: *anyopaque) Router {
+        return .{
+            .allocator = allocator,
+            .dependencies = dependencies,
+        };
     }
 
     pub fn deinit(self: *Router) void {
@@ -35,12 +47,27 @@ pub const Router = struct {
         self.* = undefined;
     }
 
-    pub fn register(self: *Router, method: Method, pattern: []const u8, comptime Def: type) !void {
+    pub fn register(self: *Router, method: Method, pattern: []const u8, comptime chain_or_def: anytype) !void {
         const handler = struct {
-            fn handle(allocator: Allocator, request: zap.Request, path_params: *const match.PathParams) !void {
-                var ctx = try bind.RequestContext.fromZap(allocator, request, path_params);
+            fn handle(
+                allocator: Allocator,
+                request: zap.Request,
+                path_params: *const match.PathParams,
+                dependencies: *anyopaque,
+            ) !void {
+                var ctx = try bind.RequestContext.fromZap(allocator, request, path_params, dependencies);
                 defer ctx.deinit();
-                try action.Action(Def).handle(allocator, request, &ctx);
+
+                const chain = if (@TypeOf(chain_or_def) == type) .{chain_or_def} else chain_or_def;
+                inline for (chain) |Step| {
+                    if (comptime isAction(Step)) {
+                        try action.Action(Step).handle(allocator, request, &ctx);
+                        return;
+                    } else {
+                        const keep_going = try Step.handle(allocator, request, &ctx);
+                        if (!keep_going) break;
+                    }
+                }
             }
         }.handle;
 
@@ -74,7 +101,7 @@ pub const Router = struct {
                 continue;
             }
 
-            try route.handler(arena_allocator, request, &path_params);
+            try route.handler(arena_allocator, request, &path_params, self.dependencies);
             return;
         }
 
