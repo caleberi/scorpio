@@ -115,6 +115,7 @@ test "manifest round-trips through disk" {
 
     var tmp = zstd.testing.tmpDir(.{});
     defer tmp.cleanup();
+    const dir = fs.fromIoDir(tmp.dir);
 
     const chunks = [_]ChunkEntry{
         .{ .id = 0, .file = "chunk_0000.bin", .size = 42, .sha256 = "deadbeef" },
@@ -131,7 +132,7 @@ test "manifest round-trips through disk" {
         },
     };
 
-    try Manifest.write(allocator, tmp.dir, "manifest.json", .{
+    try Manifest.write(allocator, dir, "manifest.json", .{
         .version = 1,
         .generated_at = 1_733_600_000,
         .chunk_size = 4 * 1024 * 1024,
@@ -139,7 +140,7 @@ test "manifest round-trips through disk" {
         .documents = &documents,
     });
 
-    var manifest = try Manifest.load(allocator, tmp.dir, "manifest.json");
+    var manifest = try Manifest.load(allocator, dir, "manifest.json");
     defer manifest.deinit();
 
     try zstd.testing.expectEqual(@as(u32, 1), manifest.data.version);

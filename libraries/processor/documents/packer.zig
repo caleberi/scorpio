@@ -544,6 +544,10 @@ fn isHidden(rel_path: []const u8) bool {
 
 const testing = zstd.testing;
 
+fn tmpJoin(allocator: zstd.mem.Allocator, tmp: *testing.TmpDir, sub: []const u8) ![]u8 {
+    return zstd.fmt.allocPrint(allocator, ".zig-cache/tmp/{s}/{s}", .{ &tmp.sub_path, sub });
+}
+
 fn readDoc(
     allocator: zstd.mem.Allocator,
     out_dir: fs.Dir,
@@ -562,19 +566,18 @@ fn readDoc(
 
 test "full pack writes chunks and documents read back byte-identical" {
     const allocator = testing.allocator;
+    const io = testing.io;
 
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
-    try tmp.dir.makePath("src/blog");
-    try tmp.dir.writeFile(.{ .sub_path = "src/blog/a.md", .data = "# Alpha\n" });
-    try tmp.dir.writeFile(.{ .sub_path = "src/blog/b.md", .data = "# Bravo\n" });
-    try tmp.dir.writeFile(.{ .sub_path = "src/blog/ignore.txt", .data = "not a doc" });
+    try tmp.dir.createDirPath(io, "src/blog");
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/blog/a.md", .data = "# Alpha\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/blog/b.md", .data = "# Bravo\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/blog/ignore.txt", .data = "not a doc" });
 
-    const src_path = try tmp.dir.realpathAlloc(allocator, "src");
+    const src_path = try tmpJoin(allocator, &tmp, "src");
     defer allocator.free(src_path);
-    const out_path = try tmp.dir.realpathAlloc(allocator, ".");
-    defer allocator.free(out_path);
-    const out_full = try fs.path.join(allocator, &.{ out_path, "pack" });
+    const out_full = try tmpJoin(allocator, &tmp, "pack");
     defer allocator.free(out_full);
 
     var directory = try Directory.load(allocator, src_path);
@@ -604,22 +607,21 @@ test "full pack writes chunks and documents read back byte-identical" {
 
 test "oversize document gets its own chunk" {
     const allocator = testing.allocator;
+    const io = testing.io;
 
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
-    try tmp.dir.makePath("src");
+    try tmp.dir.createDirPath(io, "src");
 
     const big = try allocator.alloc(u8, 20);
     defer allocator.free(big);
     @memset(big, 'X');
-    try tmp.dir.writeFile(.{ .sub_path = "src/small.md", .data = "tiny" });
-    try tmp.dir.writeFile(.{ .sub_path = "src/big.md", .data = big });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/small.md", .data = "tiny" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/big.md", .data = big });
 
-    const src_path = try tmp.dir.realpathAlloc(allocator, "src");
+    const src_path = try tmpJoin(allocator, &tmp, "src");
     defer allocator.free(src_path);
-    const out_full = try tmp.dir.realpathAlloc(allocator, "src");
-    defer allocator.free(out_full);
-    const pack_dir = try fs.path.join(allocator, &.{ out_full, "..", "pack" });
+    const pack_dir = try tmpJoin(allocator, &tmp, "pack");
     defer allocator.free(pack_dir);
 
     var directory = try Directory.load(allocator, src_path);
@@ -648,16 +650,17 @@ test "oversize document gets its own chunk" {
 
 test "incremental repack reuses unchanged and rewrites edited" {
     const allocator = testing.allocator;
+    const io = testing.io;
 
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
-    try tmp.dir.makePath("src");
-    try tmp.dir.writeFile(.{ .sub_path = "src/keep.md", .data = "stable content" });
-    try tmp.dir.writeFile(.{ .sub_path = "src/edit.md", .data = "before" });
+    try tmp.dir.createDirPath(io, "src");
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/keep.md", .data = "stable content" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/edit.md", .data = "before" });
 
-    const src_path = try tmp.dir.realpathAlloc(allocator, "src");
+    const src_path = try tmpJoin(allocator, &tmp, "src");
     defer allocator.free(src_path);
-    const pack_dir = try fs.path.join(allocator, &.{ src_path, "..", "pack" });
+    const pack_dir = try tmpJoin(allocator, &tmp, "pack");
     defer allocator.free(pack_dir);
 
     {
@@ -677,7 +680,7 @@ test "incremental repack reuses unchanged and rewrites edited" {
         break :blk m.get("keep").?.*;
     };
 
-    try tmp.dir.writeFile(.{ .sub_path = "src/edit.md", .data = "after the edit" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/edit.md", .data = "after the edit" });
 
     {
         var directory = try Directory.load(allocator, src_path);
@@ -701,17 +704,18 @@ test "incremental repack reuses unchanged and rewrites edited" {
 
 test "compaction renumbers chunks and drops dead files" {
     const allocator = testing.allocator;
+    const io = testing.io;
 
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
-    try tmp.dir.makePath("src");
-    try tmp.dir.writeFile(.{ .sub_path = "src/a.md", .data = "aaaa" });
-    try tmp.dir.writeFile(.{ .sub_path = "src/b.md", .data = "bbbb" });
-    try tmp.dir.writeFile(.{ .sub_path = "src/c.md", .data = "cccc" });
+    try tmp.dir.createDirPath(io, "src");
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/a.md", .data = "aaaa" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/b.md", .data = "bbbb" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/c.md", .data = "cccc" });
 
-    const src_path = try tmp.dir.realpathAlloc(allocator, "src");
+    const src_path = try tmpJoin(allocator, &tmp, "src");
     defer allocator.free(src_path);
-    const pack_dir = try fs.path.join(allocator, &.{ src_path, "..", "pack" });
+    const pack_dir = try tmpJoin(allocator, &tmp, "pack");
     defer allocator.free(pack_dir);
 
     // Cap of 8 packs two 4-byte docs per chunk. Sorted layout is deterministic:
@@ -736,7 +740,7 @@ test "compaction renumbers chunks and drops dead files" {
 
     // Edit a.md: chunk_0000 keeps b live but a's 4 bytes go dead (a partially
     // dead surviving chunk). dead/total = 4/16 = 0.25 > 0.2 -> forces compaction.
-    try tmp.dir.writeFile(.{ .sub_path = "src/a.md", .data = "zzzz" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/a.md", .data = "zzzz" });
 
     {
         var directory = try Directory.load(allocator, src_path);
@@ -760,7 +764,8 @@ test "compaction renumbers chunks and drops dead files" {
 
     // No orphaned chunk files beyond the two live ones (+ manifest.json).
     var count: usize = 0;
-    var it = out_dir.iterate();
+    var it = try out_dir.iterate();
+    defer it.deinit();
     while (try it.next()) |entry| {
         if (zstd.mem.endsWith(u8, entry.name, ".dat")) count += 1;
     }

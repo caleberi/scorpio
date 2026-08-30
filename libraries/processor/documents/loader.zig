@@ -274,13 +274,16 @@ test "Directory.load recursively indexes folders and files" {
 
     var tmp = zstd.testing.tmpDir(.{});
     defer tmp.cleanup();
+    const io = zstd.testing.io;
 
-    try tmp.dir.makePath("a/b");
-    try tmp.dir.writeFile(.{ .sub_path = "root.txt", .data = "root" });
-    try tmp.dir.writeFile(.{ .sub_path = "a/nested.txt", .data = "nested" });
-    try tmp.dir.writeFile(.{ .sub_path = "a/b/deep.txt", .data = "deep" });
+    try tmp.dir.createDirPath(io, "a/b");
+    try tmp.dir.writeFile(io, .{ .sub_path = "root.txt", .data = "root" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "a/nested.txt", .data = "nested" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "a/b/deep.txt", .data = "deep" });
 
-    const root_path = try tmp.dir.realpathAlloc(allocator, ".");
+    var root_buf: [zstd.Io.Dir.max_path_bytes]u8 = undefined;
+    const root_n = try tmp.dir.realPath(io, &root_buf);
+    const root_path = try allocator.dupe(u8, root_buf[0..root_n]);
     defer allocator.free(root_path);
 
     var directory = try Directory.load(allocator, root_path);
