@@ -1,9 +1,9 @@
 const zstd = @import("std");
 
-pub fn ManagedPointer(comptime Ptr: type) type {
+pub fn Box(comptime Ptr: type) type {
     const ptr_info = switch (@typeInfo(Ptr)) {
         .pointer => |info| info,
-        else => @compileError("ManagedPointer expects *T or []T, got " ++ @typeName(Ptr)),
+        else => @compileError("Box expects *T or []T, got " ++ @typeName(Ptr)),
     };
     const Child = ptr_info.child;
 
@@ -23,7 +23,7 @@ pub fn ManagedPointer(comptime Ptr: type) type {
 
         fn createOne(allocator: zstd.mem.Allocator) !Self {
             if (ptr_info.size != .one) {
-                @compileError("ManagedPointer(" ++ @typeName(Ptr) ++ ").create takes a length for slices");
+                @compileError("Box(" ++ @typeName(Ptr) ++ ").create takes a length for slices");
             }
             const p = try allocator.create(Child);
             return wrap(allocator, p);
@@ -31,7 +31,7 @@ pub fn ManagedPointer(comptime Ptr: type) type {
 
         fn createSlice(allocator: zstd.mem.Allocator, len: usize) !Self {
             if (ptr_info.size != .slice) {
-                @compileError("ManagedPointer(" ++ @typeName(Ptr) ++ ").create does not take a length");
+                @compileError("Box(" ++ @typeName(Ptr) ++ ").create does not take a length");
             }
             const s = try allocator.alloc(Child, len);
             return wrap(allocator, s);
@@ -40,7 +40,7 @@ pub fn ManagedPointer(comptime Ptr: type) type {
         pub const create = switch (ptr_info.size) {
             .one => createOne,
             .slice => createSlice,
-            else => @compileError("ManagedPointer only supports *T and []T, got " ++ @typeName(Ptr)),
+            else => @compileError("Box only supports *T and []T, got " ++ @typeName(Ptr)),
         };
 
         pub fn get(self: *const Self) Ptr {
@@ -60,7 +60,7 @@ pub fn ManagedPointer(comptime Ptr: type) type {
 
 const testing = zstd.testing;
 
-test ManagedPointer {
+test Box {
     const Test = struct {
         name: []const u8,
         test_fn: *const fn (allocator: zstd.mem.Allocator) anyerror!void,
@@ -71,10 +71,10 @@ test ManagedPointer {
             .name = "create *i32",
             .test_fn = struct {
                 fn run(allocator: zstd.mem.Allocator) anyerror!void {
-                    var mp = try ManagedPointer(*i32).create(allocator);
-                    defer mp.clean();
-                    mp.get().* = 42;
-                    try testing.expectEqual(@as(i32, 42), mp.get().*);
+                    var boxed = try Box(*i32).create(allocator);
+                    defer boxed.clean();
+                    boxed.get().* = 42;
+                    try testing.expectEqual(@as(i32, 42), boxed.get().*);
                 }
             }.run,
         },
@@ -85,7 +85,7 @@ test ManagedPointer {
                     const raw = try allocator.create(u8);
                     raw.* = 3;
 
-                    var wrapped = ManagedPointer(*u8).wrap(allocator, raw);
+                    var wrapped = Box(*u8).wrap(allocator, raw);
                     defer wrapped.clean();
                     try testing.expectEqual(@as(u8, 3), wrapped.get().*);
                     try testing.expect(wrapped.get() == raw);
@@ -96,11 +96,11 @@ test ManagedPointer {
             .name = "create *[N]T array",
             .test_fn = struct {
                 fn run(allocator: zstd.mem.Allocator) anyerror!void {
-                    var mp = try ManagedPointer(*[4]u8).create(allocator);
-                    defer mp.clean();
-                    @memset(mp.get(), 0xaa);
-                    try testing.expectEqual(@as(usize, 4), mp.get().len);
-                    try testing.expectEqual(@as(u8, 0xaa), mp.get()[2]);
+                    var boxed = try Box(*[4]u8).create(allocator);
+                    defer boxed.clean();
+                    @memset(boxed.get(), 0xaa);
+                    try testing.expectEqual(@as(usize, 4), boxed.get().len);
+                    try testing.expectEqual(@as(u8, 0xaa), boxed.get()[2]);
                 }
             }.run,
         },
@@ -108,11 +108,11 @@ test ManagedPointer {
             .name = "create []T slice",
             .test_fn = struct {
                 fn run(allocator: zstd.mem.Allocator) anyerror!void {
-                    var mp = try ManagedPointer([]u8).create(allocator, 8);
-                    defer mp.clean();
-                    @memset(mp.get(), 1);
-                    try testing.expectEqual(@as(usize, 8), mp.get().len);
-                    try testing.expectEqual(@as(u8, 1), mp.get()[0]);
+                    var boxed = try Box([]u8).create(allocator, 8);
+                    defer boxed.clean();
+                    @memset(boxed.get(), 1);
+                    try testing.expectEqual(@as(usize, 8), boxed.get().len);
+                    try testing.expectEqual(@as(u8, 1), boxed.get()[0]);
                 }
             }.run,
         },
@@ -123,7 +123,7 @@ test ManagedPointer {
                     const raw = try allocator.alloc(u16, 3);
                     @memset(raw, 9);
 
-                    var wrapped = ManagedPointer([]u16).wrap(allocator, raw);
+                    var wrapped = Box([]u16).wrap(allocator, raw);
                     defer wrapped.clean();
                     try testing.expectEqual(@as(usize, 3), wrapped.get().len);
                     try testing.expectEqual(@as(u16, 9), wrapped.get()[1]);
