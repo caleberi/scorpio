@@ -1,7 +1,7 @@
 const zstd = @import("std");
 const zap = @import("zap");
 const libraries = @import("libraries");
-const fs = libraries.fs;
+
 const pg = @import("pg");
 const chroma_logger = @import("chroma");
 
@@ -9,8 +9,11 @@ const config_mod = @import("app/config.zig");
 const state_mod = @import("app/state.zig");
 const BlogCache = @import("app/blog/cache.zig").BlogCache;
 const BlogDb = @import("app/blog/db.zig").BlogDb;
+const Box = @import("common").Box;
+
 const actions = @import("app/actions/root.zig");
 
+const fs = libraries.fs;
 const Manifest = libraries.processor.documents.manifest.Manifest;
 const Cloudinary = libraries.uploader.cloudinary.Cloudinary;
 const Router = libraries.router.Router;
@@ -21,6 +24,7 @@ pub const std_options: zstd.Options = .{
 };
 
 pub fn main(init: zstd.process.Init) !void {
+    // process.Init.gpa is already thread-safe (DebugAllocator mutex / smp_allocator).
     const allocator = init.gpa;
     const io = init.io;
 
@@ -40,30 +44,29 @@ pub fn main(init: zstd.process.Init) !void {
     var pack_dir = try fs.cwd().openDir(cfg.blog.pack_dir, .{});
     defer pack_dir.close();
 
-    var app_state: state_mod.State = .{
-        .allocator = allocator,
-        .io = io,
-        .config = cfg,
-        .manifest = Manifest.load(
-            allocator,
-            pack_dir,
-            "manifest.json",
-        ) catch |err| {
-            zstd.log.err("failed to load packed manifest from {s}: {}", .{ cfg.blog.pack_dir, err });
-            zstd.log.err("run `zig build pack` before starting the server", .{});
-            return err;
-        },
-        .cloud = Cloudinary.init(
-            allocator,
-            io,
-            cfg.cloudinary.cloudname,
-            cfg.cloudinary.api_key,
-            cfg.cloudinary.api_secret,
-        ),
-        .cache = undefined,
-        .db = BlogDb.init(pool),
+    var app_state_box = try Box(*state_mod.State).create(allocator);
+    defer app_state_box.clean();
+
+    const app_state = app_state_box.get();
+    app_state.allocator = allocator;
+    app_state.io = io;
+    app_state.config = cfg;
+    app_state.db = BlogDb.init(pool);
+
+    app_state.manifest = Manifest.load(allocator, pack_dir, "manifest.json") catch |err| {
+        zstd.log.err("failed to load packed manifest from {s}: {}", .{ cfg.blog.pack_dir, err });
+        zstd.log.err("run `zig build pack` before starting the server", .{});
+        return err;
     };
     defer app_state.manifest.deinit();
+
+    app_state.cloud = Cloudinary.init(
+        allocator,
+        io,
+        cfg.cloudinary.cloudname,
+        cfg.cloudinary.api_key,
+        cfg.cloudinary.api_secret,
+    );
     defer app_state.cloud.deinit();
 
     app_state.cache = BlogCache.init(
@@ -76,9 +79,7 @@ pub fn main(init: zstd.process.Init) !void {
     );
     defer app_state.cache.deinit();
 
-    state_mod.set(&app_state);
-
-    var app_router = Router.init(allocator);
+    var app_router = Router.init(allocator, app_state);
     defer app_router.deinit();
 
     try app_router.register(.GET, "/hello", libraries.router.actions.hello.Hello);
