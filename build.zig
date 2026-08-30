@@ -55,7 +55,11 @@ const DependencyModules = struct {
 /// `build.zig.zon`) to source code as an importable `build_info` module.
 fn buildInfoModule(b: *zstd.Build) *zstd.Build.Module {
     const options = b.addOptions();
-    options.addOption([]const u8, "project_name", @tagName(build_zon.name));
+    options.addOption(
+        []const u8,
+        "project_name",
+        @tagName(build_zon.name),
+    );
     return options.createModule();
 }
 
