@@ -21,8 +21,8 @@ pub const Get = struct {
     }
 
     pub fn run(inputs: Inputs, exits: *action.Exits(@This())) !void {
-        const app = state.get();
-        const doc = state.findDocument(inputs.slug) orelse {
+        const app = exits.deps(state.State);
+        const doc = app.findDocument(inputs.slug) orelse {
             return exits.send(.notFound, .{
                 .error_message = "We couldn't find that post. It may have moved, or the link is incomplete.",
             });
@@ -35,7 +35,7 @@ pub const Get = struct {
             else => return exits.send(.error_, .{ .error_message = "Something went wrong loading this post. Try again in a moment." }),
         };
 
-        const neighbors = state.neighborSlugs(inputs.slug, exits.allocator) catch {
+        const neighbors = app.neighborSlugs(inputs.slug, exits.allocator) catch {
             return exits.send(.error_, .{ .error_message = "failed to resolve neighbors" });
         };
         defer exits.allocator.free(neighbors);

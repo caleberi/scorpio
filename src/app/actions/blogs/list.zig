@@ -19,7 +19,7 @@ pub const List = struct {
     }
 
     pub fn run(_: Inputs, exits: *action.Exits(@This())) !void {
-        const app = state.get();
+        const app = exits.deps(state.State);
         const Listing = struct {
             slug: []const u8,
             path: []const u8,
