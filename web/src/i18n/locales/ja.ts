@@ -84,6 +84,17 @@ export const ja: Messages = {
     close: 'コンソールを閉じる',
     commandAria: 'コンソールコマンド',
     currentTheme: '現在のテーマ: {theme}',
+    stats: {
+      title: 'パフォーマンス',
+      close: '統計を閉じる',
+      loadTime: '読み込み時間',
+      responseTime: '応答時間',
+      memory: 'メモリ',
+      usedOf: '{used} / {total}',
+      unavailable: '取得できません',
+      samples: '{n} 件',
+      average: '平均 {value}',
+    },
   },
   article: {
     figure: '[ FIG. {n} ]',

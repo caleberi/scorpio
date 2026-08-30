@@ -84,6 +84,17 @@ export const es: Messages = {
     close: 'Cerrar consola',
     commandAria: 'Comando de consola',
     currentTheme: 'Tema actual: {theme}',
+    stats: {
+      title: 'Rendimiento',
+      close: 'Cerrar estadísticas',
+      loadTime: 'Tiempo de carga',
+      responseTime: 'Tiempo de respuesta',
+      memory: 'Memoria',
+      usedOf: '{used} de {total}',
+      unavailable: 'No disponible',
+      samples: '{n} muestras',
+      average: 'prom. {value}',
+    },
   },
   article: {
     figure: '[ FIG. {n} ]',

@@ -5,6 +5,7 @@ import {
   THEME_NAMES,
 } from '@/lib/highlight'
 import { musicPlayer, TRACKS } from '@/lib/music'
+import { formatStatLines, snapshot } from '@/lib/perf'
 
 export type ConsoleContext = {
   listPaths: () => string[]
@@ -18,6 +19,7 @@ export type ConsoleResult = {
   lines: string[]
   clear?: boolean
   close?: boolean
+  openStats?: boolean
 }
 
 const HELP_LINES = [
@@ -32,6 +34,7 @@ const HELP_LINES = [
   '  music pause|resume|stop',
   '  music volume <0-100>',
   '  music status',
+  '  stat              Show load, response, and memory stats',
   '  clear             Clear scrollback',
   '  close             Close the console',
   'Keys',
@@ -85,6 +88,9 @@ export function runConsoleCommand(
     }
     case 'music':
       return handleMusic(rest)
+    case 'stat':
+    case 'stats':
+      return { lines: formatStatLines(snapshot()), openStats: true }
     case 'clear':
       return { lines: [], clear: true }
     case 'close':
@@ -145,6 +151,8 @@ const STATIC_COMMANDS = [
   'music stop',
   'music volume',
   'music status',
+  'stat',
+  'stats',
   'clear',
   'close',
 ]

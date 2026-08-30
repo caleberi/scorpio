@@ -7,6 +7,7 @@ import { useEffect } from 'react'
 import { Nav } from '@/components/Nav'
 import { Footer } from '@/components/Footer'
 import { Console } from '@/components/Console'
+import { usePerfTracker } from '@/hooks/usePerfTracker'
 import { AppProvider, useApp } from '@/lib/app-context'
 import { KEYBOARD_SHORTCUTS } from '@/lib/constants'
 
@@ -25,6 +26,7 @@ function RootComponent() {
 function Shell() {
   const { toggleConsole } = useApp()
   const navigate = useNavigate()
+  usePerfTracker()
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

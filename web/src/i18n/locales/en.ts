@@ -84,6 +84,17 @@ export const en: Messages = {
     close: 'Close console',
     commandAria: 'Console command',
     currentTheme: 'Current theme: {theme}',
+    stats: {
+      title: 'Performance',
+      close: 'Close stats',
+      loadTime: 'Load time',
+      responseTime: 'Response time',
+      memory: 'Memory',
+      usedOf: '{used} of {total}',
+      unavailable: 'Unavailable',
+      samples: '{n} samples',
+      average: 'avg {value}',
+    },
   },
   article: {
     figure: '[ FIG. {n} ]',

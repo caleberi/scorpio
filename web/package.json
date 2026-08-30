@@ -40,5 +40,8 @@
   "devDependencies": {
     "@types/node": "^26.2.0",
     "oxlint": "^1.75.0"
+  },
+  "allowScripts": {
+    "fsevents@2.3.3": true
   }
 }

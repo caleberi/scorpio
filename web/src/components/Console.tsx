@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { interpolate } from '@/i18n'
@@ -21,6 +22,7 @@ import {
 } from '@/lib/constants'
 import { formatThemeList } from '@/lib/highlight'
 import { cn } from '@/lib/utils'
+import { StatsModal } from '@/components/StatsModal'
 
 type Line = { kind: 'in' | 'out'; text: string }
 
@@ -69,6 +71,7 @@ export function Console() {
   const [input, setInput] = useState('')
   const [history, setHistory] = useState<string[]>(readConsoleHistory)
   const [nav, setNav] = useState<HistoryNav | null>(null)
+  const [statsOpen, setStatsOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const openTargets = useMemo(() => {
@@ -137,6 +140,7 @@ export function Console() {
     if (result.close) {
       window.setTimeout(() => setConsoleState('closed'), 200)
     }
+    if (result.openStats) setStatsOpen(true)
   }
 
   const pushHistory = (command: string) => {
@@ -209,11 +213,12 @@ export function Console() {
     }
   }
 
+  let consoleUi: ReactNode = null
   switch (consoleState) {
     case 'closed':
-      return null
+      break
     case 'minimized':
-      return (
+      consoleUi = (
         <button
           type="button"
           className="fixed bottom-4 right-4 z-50 border border-ink bg-console-bar px-3 py-1.5 font-mono text-[13px] uppercase tracking-wide shadow-sm"
@@ -222,8 +227,9 @@ export function Console() {
           {t.console.title}
         </button>
       )
+      break
     case 'open':
-      return (
+      consoleUi = (
         <div
           className={cn(
             'fixed bottom-4 right-4 z-50 flex w-[min(420px,calc(100vw-2rem))] flex-col overflow-hidden',
@@ -314,5 +320,13 @@ export function Console() {
           </div>
         </div>
       )
+      break
   }
+
+  return (
+    <>
+      {consoleUi}
+      {statsOpen ? <StatsModal onClose={() => setStatsOpen(false)} /> : null}
+    </>
+  )
 }

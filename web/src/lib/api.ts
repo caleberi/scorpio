@@ -1,4 +1,5 @@
 import { API_BLOG, BLOG_PREFIX, JSON_HEADERS } from '@/lib/constants'
+import { recordResponse } from '@/lib/perf'
 
 export type BlogListing = {
   slug: string
@@ -76,7 +77,10 @@ async function requestJson<T>(
   fallback: string,
   init?: RequestInit,
 ): Promise<{ ok: true; data: T } | { ok: false; message: string }> {
-  const res = await fetch(url, init)
+  const started = performance.now()
+  const res = await fetch(url, init).finally(() => {
+    recordResponse(performance.now() - started)
+  })
   if (!res.ok) {
     return { ok: false, message: await readError(res, fallback) }
   }

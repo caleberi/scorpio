@@ -84,6 +84,17 @@ export const de: Messages = {
     close: 'Konsole schließen',
     commandAria: 'Konsolenbefehl',
     currentTheme: 'Aktuelles Theme: {theme}',
+    stats: {
+      title: 'Leistung',
+      close: 'Statistik schließen',
+      loadTime: 'Ladezeit',
+      responseTime: 'Antwortzeit',
+      memory: 'Speicher',
+      usedOf: '{used} von {total}',
+      unavailable: 'Nicht verfügbar',
+      samples: '{n} Stichproben',
+      average: 'Ø {value}',
+    },
   },
   article: {
     figure: '[ FIG. {n} ]',

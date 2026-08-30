@@ -82,6 +82,17 @@ export type Messages = {
     close: string
     commandAria: string
     currentTheme: string
+    stats: {
+      title: string
+      close: string
+      loadTime: string
+      responseTime: string
+      memory: string
+      usedOf: string
+      unavailable: string
+      samples: string
+      average: string
+    }
   }
   article: {
     figure: string
