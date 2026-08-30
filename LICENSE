@@ -1,6 +1,11 @@
 MIT License
 
-Copyright (c) 2024  Caleb Adewole Erioluwa
+Copyright (c) 2024 Caleb Adewole Erioluwa
+
+This license applies only to the source code of this project (all files
+under the project directories excluding /content, /posts, and any other
+directory explicitly designated for blog content — see LICENSE-CONTENT
+for terms governing that material).
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
