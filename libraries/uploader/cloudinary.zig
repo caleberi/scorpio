@@ -119,6 +119,7 @@ pub const Cloudinary = struct {
     api_secret: []const u8,
     config: Config,
     client: zstd.http.Client,
+    client_lock: zstd.Io.RwLock = .init,
 
     pub fn init(
         allocator: zstd.mem.Allocator,
@@ -158,6 +159,12 @@ pub const Cloudinary = struct {
     pub fn deinit(self: *Cloudinary) void {
         self.client.deinit();
         self.* = undefined;
+    }
+
+    pub fn fetch(self: *Cloudinary, options: zstd.http.Client.FetchOptions) zstd.http.Client.FetchError!zstd.http.Client.FetchResult {
+        self.client_lock.lockUncancelable(self.client.io);
+        defer self.client_lock.unlock(self.client.io);
+        return self.client.fetch(options);
     }
 
     pub fn uploadBytes(
@@ -267,7 +274,7 @@ pub const Cloudinary = struct {
         });
 
         var response: zstd.Io.Writer.Allocating = .init(a);
-        const res = try self.client.fetch(.{
+        const res = try self.fetch(.{
             .location = .{ .url = url },
             .method = .POST,
             .payload = body.items,
@@ -630,14 +637,11 @@ test "rewriteBlockedExt maps .bin to .dat and leaves other names" {
 test "live upload -> rename -> destroy" {
     const a = testing.allocator;
 
-    const cloud_name = zstd.process.getEnvVarOwned(a, "CLOUDINARY_CLOUDNAME") catch return error.SkipZigTest;
-    defer a.free(cloud_name);
-    const api_key = zstd.process.getEnvVarOwned(a, "CLOUDINARY_API_KEY") catch return error.SkipZigTest;
-    defer a.free(api_key);
-    const api_secret = zstd.process.getEnvVarOwned(a, "CLOUDINARY_API_SECRET") catch return error.SkipZigTest;
-    defer a.free(api_secret);
+    const cloud_name = zstd.c.getenv("CLOUDINARY_CLOUDNAME") orelse return error.SkipZigTest;
+    const api_key = zstd.c.getenv("CLOUDINARY_API_KEY") orelse return error.SkipZigTest;
+    const api_secret = zstd.c.getenv("CLOUDINARY_API_SECRET") orelse return error.SkipZigTest;
 
-    var client = Cloudinary.init(a, cloud_name, api_key, api_secret);
+    var client = Cloudinary.init(a, testing.io, zstd.mem.span(cloud_name), zstd.mem.span(api_key), zstd.mem.span(api_secret));
     defer client.deinit();
 
     var uploaded = try client.uploadBytes("scorpio smoke test\n", "scorpio_smoke.md", .{
