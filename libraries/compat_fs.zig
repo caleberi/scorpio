@@ -384,6 +384,10 @@ pub fn cwd() Dir {
     return .{ .fd = posix.AT.FDCWD, .owns_fd = false };
 }
 
+pub fn fromIoDir(dir: std.Io.Dir) Dir {
+    return .{ .fd = dir.handle, .owns_fd = false };
+}
+
 pub fn openDirAbsolute(absolute_path: []const u8, options: OpenDirOptions) !Dir {
     return cwd().openDir(absolute_path, options);
 }

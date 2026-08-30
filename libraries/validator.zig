@@ -1,17 +1,15 @@
 const zstd = @import("std");
 const fs = @import("compat_fs.zig");
-const lexer = @import("validation/lexer.zig");
-const parser = @import("validation/parser.zig");
 const engine = @import("validation/engine.zig");
-const defaults = @import("validation/default.zig");
+const schema = @import("validation/schema.zig");
 const env = @import("env/loader.zig");
 const EnvironmentParser = env.EnvironmentParser;
 
 pub fn Validator(comptime T: type) type {
     return struct {
         allocator: zstd.mem.Allocator,
-
         engine: engine.Engine,
+        schema: ?schema.Schema(T) = null,
 
         pub fn init(allocator: zstd.mem.Allocator) !Validator(T) {
             const e = try engine.Engine.init(allocator);
@@ -22,29 +20,8 @@ pub fn Validator(comptime T: type) type {
         }
 
         pub fn deinit(self: *Validator(T)) void {
+            if (self.schema) |*compiled| compiled.deinit();
             self.engine.deinit();
-        }
-
-        pub fn registerValidators(self: *Validator(T)) !void {
-            try self.engine.registerValidator("alpha", defaults.alphaValidator);
-            try self.engine.registerValidator("numeric", defaults.numericValidator);
-            try self.engine.registerValidator("min_length", defaults.minLengthValidator);
-            try self.engine.registerValidator("max_length", defaults.maxLengthValidator);
-            try self.engine.registerValidator("min", defaults.minValidator);
-            try self.engine.registerValidator("max", defaults.maxValidator);
-            try self.engine.registerValidator("required", defaults.requiredValidator);
-            try self.engine.registerValidator("email", defaults.emailValidator);
-        }
-
-        pub fn registerMessages(self: *Validator(T)) !void {
-            try self.engine.registerDefaultMessage("alpha", "Field must contain only alphabetic characters");
-            try self.engine.registerDefaultMessage("numeric", "Field must be numeric");
-            try self.engine.registerDefaultMessage("min_length", "Field length is below minimum");
-            try self.engine.registerDefaultMessage("max_length", "Field length exceeds maximum");
-            try self.engine.registerDefaultMessage("min", "Value is below minimum");
-            try self.engine.registerDefaultMessage("max", "Value exceeds maximum");
-            try self.engine.registerDefaultMessage("required", "Field is required");
-            try self.engine.registerDefaultMessage("email", "Invalid email format");
         }
 
         pub fn registerCustomValidator(
@@ -70,297 +47,59 @@ pub fn Validator(comptime T: type) type {
         }
 
         pub fn validate(self: *Validator(T), container: T, source: ?[]const u8) !void {
-            const container_type = @TypeOf(container);
-            const container_info = @typeInfo(container_type);
+            const container_info = @typeInfo(T);
 
-            if (container_info == .pointer) {
-                if (container_info.pointer.size == .one) {
-                    return try self.validate(
-                        container.*,
-                        source,
-                    );
-                }
+            if (container_info == .pointer and container_info.pointer.size == .one) {
+                return try self.validate(container.*, source);
             }
 
             if (container_info != .@"struct") {
                 return error.InvalidContainer;
             }
 
-            const doc_source = blk: {
-                const has_doc = @hasDecl(container_type, "doc");
-                const has_documentation = @hasDecl(container_type, "documentation");
-
-                if (has_doc) break :blk @field(container_type, "doc");
-                if (has_documentation) break :blk @field(container_type, "documentation");
-
-                inline for (container_info.@"struct".decls) |decl| {
-                    if (comptime zstd.mem.eql(u8, decl.name, "doc")) {
-                        break :blk @field(container_type, "doc");
-                    }
-                    if (comptime zstd.mem.eql(u8, decl.name, "documentation")) {
-                        break :blk @field(container_type, "documentation");
-                    }
-                }
-
-                if (source) |src| {
-                    break :blk src;
-                }
-
+            const has_embedded = @hasDecl(T, "doc") or @hasDecl(T, "documentation");
+            if (!has_embedded and source == null) {
                 return error.MissingDocumentation;
-            };
+            }
 
-            if (doc_source.len == 0) return;
+            if (source) |src| {
+                var compiled = try schema.Schema(T).compile(self.allocator, src);
+                defer compiled.deinit();
+                try runSchema(&compiled, &self.engine, self.allocator, container);
+                return;
+            }
 
-            var l = try lexer.Lexer.init(self.allocator, doc_source);
-            defer l.deinit();
+            if (schema.docOf(T).len == 0) return;
 
-            const tokens = try l.lex();
-            var p = parser.Parser.init(self.allocator, tokens, doc_source);
-            const validation_specs = try p.parse();
-            defer validation_specs.deinit(self.allocator);
-
-            try self.validateStruct(container, validation_specs);
+            if (self.schema == null) {
+                self.schema = try schema.Schema(T).compile(self.allocator, null);
+            }
+            try runSchema(&self.schema.?, &self.engine, self.allocator, container);
         }
 
-        /// Internal method that validates all fields in a struct.
-        ///
-        /// Iterates through struct fields, detecting:
-        /// - Documentation fields (skipped)
-        /// - Nested struct fields (recursively validated)
-        /// - Regular fields (validated against specs)
-        ///
-        /// Nested struct validation creates isolated sub-validators with
-        /// their own allocators but inherited validator registrations.
-        fn validateStruct(
-            self: *Validator(T),
-            container: anytype,
-            validation_specs: lexer.Documentation,
+        fn runSchema(
+            compiled: *schema.Schema(T),
+            eng: *engine.Engine,
+            allocator: zstd.mem.Allocator,
+            container: T,
         ) !void {
-            const container_type = @TypeOf(container);
-            const container_info = @typeInfo(container_type);
-
-            inline for (container_info.@"struct".fields) |field| {
-                if (comptime zstd.mem.eql(u8, field.name, "doc") or
-                    zstd.mem.eql(u8, field.name, "documentation"))
-                {
-                    continue;
-                }
-
-                const field_type_info = @typeInfo(field.type);
-                if (field_type_info == .@"struct") {
-                    const nested_value = @field(container, field.name);
-
-                    const nested_doc = if (@hasDecl(field.type, "doc"))
-                        @field(field.type, "doc")
-                    else if (@hasDecl(field.type, "documentation"))
-                        @field(field.type, "documentation")
-                    else
-                        "";
-                    if (nested_doc.len > 0) {
-                        {
-                            var gpa = zstd.heap.DebugAllocator(.{}){};
-                            defer zstd.debug.assert(gpa.deinit() == .ok);
-                            const allocator = gpa.allocator();
-                            var validator = try Validator(field.type).init(allocator);
-                            defer validator.deinit();
-                            validator.engine.validators = try self.copyValidators(allocator);
-                            validator.engine.default_messages = try self.copyValidatorMessage(allocator);
-                            try validator.validate(nested_value, nested_doc);
-                        }
-                    }
-                    continue;
-                }
-
-                if (field_type_info == .pointer and
-                    field_type_info.pointer.size == .one and
-                    @typeInfo(field_type_info.pointer.child) == .@"struct")
-                {
-                    const Child = field_type_info.pointer.child;
-                    const nested_ptr = @field(container, field.name);
-                    const nested_doc = if (@hasDecl(Child, "doc"))
-                        @field(Child, "doc")
-                    else if (@hasDecl(Child, "documentation"))
-                        @field(Child, "documentation")
-                    else
-                        "";
-                    if (nested_doc.len > 0) {
-                        var gpa = zstd.heap.DebugAllocator(.{}){};
-                        defer zstd.debug.assert(gpa.deinit() == .ok);
-                        const allocator = gpa.allocator();
-                        var validator = try Validator(Child).init(allocator);
-                        defer validator.deinit();
-                        validator.engine.validators = try self.copyValidators(allocator);
-                        validator.engine.default_messages = try self.copyValidatorMessage(allocator);
-                        try validator.validate(nested_ptr.*, nested_doc);
-                    }
-                    continue;
-                }
-
-                try self.validateField(container, field, validation_specs);
+            const outcome = try compiled.validate(eng, container);
+            defer outcome.deinit(allocator);
+            if (outcome == .err) {
+                zstd.debug.print("\nValidation failed for field '{s}': {s}\n", .{
+                    outcome.err.path,
+                    outcome.err.message,
+                });
+                return error.ValidationFailed;
             }
-        }
-
-        /// Validates a single field against its validation specification.
-        ///
-        /// Process:
-        /// 1. Finds the validation spec matching the field name
-        /// 2. Converts field value to string based on its type
-        /// 3. Prepares validator and message lists
-        /// 4. Executes validation engine
-        /// 5. Reports first validation failure
-        ///
-        /// Type Conversion:
-        /// - Integers: Formatted as decimal
-        /// - Floats: Formatted as decimal
-        /// - u8 slices: Treated as strings
-        /// - Booleans: Formatted as true/false
-        /// - Others: Generic {any} formatting
-        ///
-        /// Memory Management:
-        /// - Uses stack buffer for value conversion (256 bytes)
-        /// - Allocates temporary copies of validators and messages
-        /// - Frees all allocations via defer blocks
-        fn validateField(
-            self: *Validator(T),
-            container: anytype,
-            field: zstd.builtin.Type.StructField,
-            validation_specs: lexer.Documentation,
-        ) !void {
-            for (validation_specs.specs) |validation_spec| {
-                if (!zstd.mem.eql(u8, validation_spec.property, field.name)) {
-                    continue;
-                }
-
-                const field_value = @field(container, field.name);
-                var value_buf: [256]u8 = undefined;
-                const value = blk: {
-                    const v = engine.Value.fromAny(field_value);
-                    if (v != .other) break :blk v;
-                    const s = try zstd.fmt.bufPrint(&value_buf, "{any}", .{field_value});
-                    break :blk engine.Value{ .string = s };
-                };
-
-                var validators = try zstd.ArrayList(engine.Validator).initCapacity(self.allocator, 0);
-                defer {
-                    for (validators.items) |v| {
-                        self.allocator.free(v.name);
-                        for (v.params) |pm| {
-                            pm.deinit(self.allocator);
-                        }
-                        self.allocator.free(v.params);
-                    }
-                    validators.deinit(self.allocator);
-                }
-
-                var messages = try zstd.ArrayList(engine.ValidationMessage).initCapacity(self.allocator, 0);
-                defer {
-                    for (messages.items) |m| {
-                        self.allocator.free(m.name);
-                    }
-                    messages.deinit(self.allocator);
-                }
-
-                for (validation_spec.validators) |v| {
-                    const validator_name = try self.allocator.dupe(u8, v.name);
-                    errdefer self.allocator.free(validator_name);
-
-                    var params = try self.allocator.alloc(engine.Parameter, v.params.len);
-                    var params_owned: usize = 0;
-                    errdefer {
-                        for (params[0..params_owned]) |pm| pm.deinit(self.allocator);
-                        self.allocator.free(params);
-                    }
-
-                    for (v.params, 0..) |param, i| {
-                        params[i] = try param.dupe(self.allocator);
-                        params_owned += 1;
-                    }
-
-                    try validators.append(self.allocator, engine.Validator{
-                        .name = validator_name,
-                        .params = params,
-                    });
-                }
-
-                for (validation_spec.messages) |msg| {
-                    try messages.append(self.allocator, engine.ValidationMessage{
-                        .name = try self.allocator.dupe(u8, msg.name),
-                        .message = msg.message,
-                    });
-                }
-
-                const results = try self.engine.validateField(
-                    field.name,
-                    value,
-                    validators.items,
-                    messages.items,
-                );
-                defer self.allocator.free(results);
-
-                for (results) |result| {
-                    if (!result.valid) {
-                        zstd.debug.print("\nValidation failed for field '{s}': {s}\n", .{
-                            field.name,
-                            result.error_message orelse "Unknown error",
-                        });
-                        return error.ValidationFailed;
-                    }
-                }
-            }
-        }
-
-        pub fn copyValidators(self: *Validator(T), dest_allocator: zstd.mem.Allocator) !zstd.StringHashMap(engine.ValidatorFn) {
-            var new_map = zstd.StringHashMap(engine.ValidatorFn).init(dest_allocator);
-            errdefer {
-                var it = new_map.iterator();
-                while (it.next()) |entry| {
-                    dest_allocator.free(entry.key_ptr.*);
-                }
-                new_map.deinit();
-            }
-
-            var iterator = self.engine.validators.iterator();
-            while (iterator.next()) |entry| {
-                const key_copy = try dest_allocator.dupe(u8, entry.key_ptr.*);
-                errdefer dest_allocator.free(key_copy);
-                try new_map.put(key_copy, entry.value_ptr.*);
-            }
-
-            return new_map;
-        }
-
-        pub fn copyValidatorMessage(self: *Validator(T), dest_allocator: zstd.mem.Allocator) !zstd.StringHashMap([]const u8) {
-            var new_map = zstd.StringHashMap([]const u8).init(dest_allocator);
-            errdefer {
-                var it = new_map.iterator();
-                while (it.next()) |entry| {
-                    dest_allocator.free(entry.key_ptr.*);
-                    dest_allocator.free(entry.value_ptr.*);
-                }
-                new_map.deinit();
-            }
-
-            var iterator = self.engine.default_messages.iterator();
-            while (iterator.next()) |entry| {
-                const key_copy = try dest_allocator.dupe(u8, entry.key_ptr.*);
-                errdefer dest_allocator.free(key_copy);
-                const value_copy = try dest_allocator.dupe(u8, entry.value_ptr.*);
-                errdefer dest_allocator.free(value_copy);
-                try new_map.put(key_copy, value_copy);
-            }
-
-            return new_map;
         }
     };
 }
 
-test "validator with registration functions" {
+test "builtin validators available after init" {
     const allocator = zstd.testing.allocator;
     var validator = try Validator(i32).init(allocator);
     defer validator.deinit();
-
-    try validator.registerValidators();
-    try validator.registerMessages();
 
     const result = try validator.engine.validate("name", .{ .string = "JohnDoe" }, "alpha", &.{});
     try zstd.testing.expect(result.valid);
@@ -426,9 +165,6 @@ test "complete engine validation" {
 
     var validator = try Validator(User).init(allocator);
     defer validator.deinit();
-
-    try validator.registerValidators();
-    try validator.registerMessages();
 
     try validator.registerCustomValidator(
         "endswith",
@@ -524,9 +260,6 @@ test "nested struct validation" {
     var validator = try Validator(User).init(allocator);
     defer validator.deinit();
 
-    try validator.registerValidators();
-    try validator.registerMessages();
-
     try validator.validate(user, null);
 }
 
@@ -539,9 +272,6 @@ test "validation with external source" {
 
     var validator = try Validator(Product).init(allocator);
     defer validator.deinit();
-
-    try validator.registerValidators();
-    try validator.registerMessages();
 
     const validation_source =
         \\// @validation
@@ -791,14 +521,15 @@ test "complex environment configuration with validation" {
         \\SMS_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
     ;
 
-    const tmp_dir = zstd.testing.tmpDir(.{});
-    var dir = tmp_dir.dir;
+    var tmp_dir = zstd.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const io = zstd.testing.io;
 
-    try dir.writeFile(.{
+    try tmp_dir.dir.writeFile(io, .{
         .data = env_content,
         .sub_path = "complex.env",
     });
-    defer dir.deleteFile("complex.env") catch {};
+    defer tmp_dir.dir.deleteFile(io, "complex.env") catch {};
 
     const sub_path = try allocator.dupe(u8, &tmp_dir.sub_path);
     defer allocator.free(sub_path);
@@ -821,7 +552,7 @@ test "complex environment configuration with validation" {
     );
 
     const config = try env_parser.parse();
-    defer env_parser.deinit(config);
+    defer env_parser.cleanup(config);
 
     try zstd.testing.expectEqualStrings("development", config.node_env);
     try zstd.testing.expectEqual(@as(i32, 3000), config.port);
@@ -851,8 +582,6 @@ test "complex environment configuration with validation" {
 
     var vd = try Validator(AppConfig).init(allocator);
     defer vd.deinit();
-    try vd.registerValidators();
-    try vd.registerMessages();
     try vd.registerCustomValidator("url", struct {
         fn url_validator(ctx: engine.Context) engine.ValidationError!engine.ValidationResult {
             const s = ctx.value.asString() orelse {
@@ -893,14 +622,15 @@ test "environment configuration validation failure" {
 
     const env_content = "PORT=100";
 
-    const tmp_dir = zstd.testing.tmpDir(.{});
-    var dir = tmp_dir.dir;
+    var tmp_dir = zstd.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+    const io = zstd.testing.io;
 
-    try dir.writeFile(.{
+    try tmp_dir.dir.writeFile(io, .{
         .data = env_content,
         .sub_path = "invalid.env",
     });
-    defer dir.deleteFile("invalid.env") catch {};
+    defer tmp_dir.dir.deleteFile(io, "invalid.env") catch {};
 
     const sub_path = try allocator.dupe(u8, &tmp_dir.sub_path);
     defer allocator.free(sub_path);
@@ -923,12 +653,10 @@ test "environment configuration validation failure" {
     );
 
     const config = try env_parser.parse();
-    defer env_parser.deinit(config);
+    defer env_parser.cleanup(config);
 
     var vd = try Validator(Config).init(allocator);
     defer vd.deinit();
-    try vd.registerValidators();
-    try vd.registerMessages();
 
     try zstd.testing.expectError(error.ValidationFailed, vd.validate(config.*, null));
 }
