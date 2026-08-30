@@ -758,10 +758,6 @@ fn indexOfIgnoreCase(haystack: []const u8, needle: []const u8) ?usize {
     return null;
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 const testing = zstd.testing;
 
 test "scanRefs finds markdown and html references" {
@@ -886,6 +882,7 @@ test "resolveAssetPath finds nested-post and repo-root blob images" {
 
 test "linkage json round-trips through disk" {
     const allocator = testing.allocator;
+    const io = testing.io;
 
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -910,9 +907,9 @@ test "linkage json round-trips through disk" {
         .assets = &assets,
     }, .{ .whitespace = .minified });
     defer allocator.free(bytes);
-    try tmp.dir.writeFile(.{ .sub_path = "media-links.json", .data = bytes });
+    try tmp.dir.writeFile(io, .{ .sub_path = "media-links.json", .data = bytes });
 
-    const read_back = try tmp.dir.readFileAlloc(allocator, "media-links.json", max_linkage_bytes);
+    const read_back = try tmp.dir.readFileAlloc(io, "media-links.json", allocator, .unlimited);
     defer allocator.free(read_back);
 
     var parse_arena = zstd.heap.ArenaAllocator.init(allocator);
@@ -929,20 +926,18 @@ test "linkage json round-trips through disk" {
 
 test "live run uploads local image, rewrites markdown, prunes on removal" {
     const allocator = testing.allocator;
+    const io = testing.io;
 
-    const cloud_name = zstd.process.getEnvVarOwned(allocator, "CLOUDINARY_CLOUDNAME") catch return error.SkipZigTest;
-    defer allocator.free(cloud_name);
-    const api_key = zstd.process.getEnvVarOwned(allocator, "CLOUDINARY_API_KEY") catch return error.SkipZigTest;
-    defer allocator.free(api_key);
-    const api_secret = zstd.process.getEnvVarOwned(allocator, "CLOUDINARY_API_SECRET") catch return error.SkipZigTest;
-    defer allocator.free(api_secret);
+    const cloud_name = zstd.c.getenv("CLOUDINARY_CLOUDNAME") orelse return error.SkipZigTest;
+    const api_key = zstd.c.getenv("CLOUDINARY_API_KEY") orelse return error.SkipZigTest;
+    const api_secret = zstd.c.getenv("CLOUDINARY_API_SECRET") orelse return error.SkipZigTest;
 
-    var client = cloudinary.Cloudinary.init(allocator, cloud_name, api_key, api_secret);
+    var client = cloudinary.Cloudinary.init(allocator, io, zstd.mem.span(cloud_name), zstd.mem.span(api_key), zstd.mem.span(api_secret));
     defer client.deinit();
 
     var tmp = testing.tmpDir(.{});
     defer tmp.cleanup();
-    try tmp.dir.makePath("src/blog/assets");
+    try tmp.dir.createDirPath(io, "src/blog/assets");
     // A 1x1 transparent PNG.
     const png = [_]u8{
         0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
@@ -952,10 +947,14 @@ test "live run uploads local image, rewrites markdown, prunes on removal" {
         0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
         0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
     };
-    try tmp.dir.writeFile(.{ .sub_path = "src/blog/assets/pixel.png", .data = &png });
-    try tmp.dir.writeFile(.{ .sub_path = "src/blog/post.md", .data = "# Post\n\n![pixel](assets/pixel.png)\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/blog/assets/pixel.png", .data = &png });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/blog/post.md", .data = "# Post\n\n![pixel](assets/pixel.png)\n" });
 
-    const src = try tmp.dir.realpathAlloc(allocator, "src");
+    var src_dir = try tmp.dir.openDir(io, "src", .{});
+    defer src_dir.close(io);
+    var src_buf: [zstd.Io.Dir.max_path_bytes]u8 = undefined;
+    const src_n = try src_dir.realPath(io, &src_buf);
+    const src = try allocator.dupe(u8, src_buf[0..src_n]);
     defer allocator.free(src);
     const stage = try zstd.fs.path.join(allocator, &.{ src, "..", "stage" });
     defer allocator.free(stage);
@@ -977,13 +976,13 @@ test "live run uploads local image, rewrites markdown, prunes on removal" {
 
         const staged_path = try zstd.fs.path.join(allocator, &.{ stage, "blog/post.md" });
         defer allocator.free(staged_path);
-        const staged = try zstd.fs.cwd().readFileAlloc(allocator, staged_path, max_document_bytes);
+        const staged = try fs.cwd().readFileAlloc(allocator, staged_path, max_document_bytes);
         defer allocator.free(staged);
         try testing.expect(zstd.mem.indexOf(u8, staged, "res.cloudinary.com") != null);
     }
 
     // Remove the reference; a pruning run should destroy the orphan.
-    try tmp.dir.writeFile(.{ .sub_path = "src/blog/post.md", .data = "# Post\n\nno media now\n" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "src/blog/post.md", .data = "# Post\n\nno media now\n" });
     {
         var processor = Processor.init(allocator, .{
             .input_dir = src,
