@@ -10,7 +10,6 @@ pub const Cdn = struct {
     cloud: *Cloudinary,
     pack_prefix: []const u8,
     pack_dir: []const u8,
-    client: *std.http.Client,
 
     pub fn fetchDocument(self: *Cdn, chunks: []const ChunkEntry, doc: *const DocumentEntry) ![]u8 {
         const ChunkIdProbe = struct {
@@ -60,7 +59,7 @@ pub const Cdn = struct {
         var response: std.Io.Writer.Allocating = .init(self.allocator);
         defer response.deinit();
 
-        const res = try self.client.fetch(.{
+        const res = try self.cloud.fetch(.{
             .location = .{ .url = url },
             .method = .GET,
             .response_writer = &response.writer,
