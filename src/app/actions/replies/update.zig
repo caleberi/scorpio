@@ -29,7 +29,7 @@ pub const Update = struct {
         if (inputs.body.len == 0) {
             return exits.send(.badRequest, .{ .error_message = "body required" });
         }
-        const app = state.get();
+        const app = exits.deps(state.State);
         const blog_id = (try app.db.blogIdBySlug(exits.allocator, inputs.slug)) orelse {
             return exits.send(.notFound, .{ .error_message = "This post isn't set up for comments yet." });
         };
