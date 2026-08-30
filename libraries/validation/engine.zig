@@ -27,6 +27,42 @@ pub const Validator = struct {
 pub const ValidationReturnType = ValidationError!ValidationResult;
 pub const ValidatorFn = *const fn (ctx: Context) ValidationReturnType;
 
+const defaults = @import("default.zig");
+
+pub const Builtin = struct {
+    name: []const u8,
+    func: ValidatorFn,
+    message: []const u8,
+};
+
+pub const builtins = [_]Builtin{
+    .{ .name = "alpha", .func = defaults.alphaValidator, .message = "Field must contain only alphabetic characters" },
+    .{ .name = "numeric", .func = defaults.numericValidator, .message = "Field must be numeric" },
+    .{ .name = "min_length", .func = defaults.minLengthValidator, .message = "Field length is below minimum" },
+    .{ .name = "max_length", .func = defaults.maxLengthValidator, .message = "Field length exceeds maximum" },
+    .{ .name = "min", .func = defaults.minValidator, .message = "Value is below minimum" },
+    .{ .name = "max", .func = defaults.maxValidator, .message = "Value exceeds maximum" },
+    .{ .name = "required", .func = defaults.requiredValidator, .message = "Field is required" },
+    .{ .name = "email", .func = defaults.emailValidator, .message = "Invalid email format" },
+};
+
+fn builtinEntry(name: []const u8) ?*const Builtin {
+    for (&builtins) |*entry| {
+        if (zstd.mem.eql(u8, entry.name, name)) return entry;
+    }
+    return null;
+}
+
+pub fn builtinByName(name: []const u8) ?ValidatorFn {
+    const entry = builtinEntry(name) orelse return null;
+    return entry.func;
+}
+
+pub fn builtinMessage(name: []const u8) ?[]const u8 {
+    const entry = builtinEntry(name) orelse return null;
+    return entry.message;
+}
+
 pub const ValidationMessage = struct {
     name: []const u8,
     message: []const u8,
@@ -101,6 +137,16 @@ pub const Engine = struct {
         try self.default_messages.put(key, value);
     }
 
+    pub fn lookup(self: *const Engine, name: []const u8) ?ValidatorFn {
+        if (self.validators.get(name)) |validator_fn| return validator_fn;
+        return builtinByName(name);
+    }
+
+    pub fn lookupMessage(self: *const Engine, name: []const u8) ?[]const u8 {
+        if (self.default_messages.get(name)) |message| return message;
+        return builtinMessage(name);
+    }
+
     pub fn validate(
         self: *Engine,
         field_name: []const u8,
@@ -108,7 +154,7 @@ pub const Engine = struct {
         validator_name: []const u8,
         params: []const Parameter,
     ) !ValidationResult {
-        const validator_fn = self.validators.get(validator_name) orelse {
+        const validator_fn = self.lookup(validator_name) orelse {
             return ValidationError.ValidatorNotFound;
         };
 
@@ -119,7 +165,15 @@ pub const Engine = struct {
             .allocator = self.allocator,
         };
 
-        return try validator_fn(ctx);
+        var result = try validator_fn(ctx);
+        if (!result.valid) {
+            if (self.default_messages.get(validator_name)) |message| {
+                result.error_message = message;
+            } else if (result.error_message == null) {
+                result.error_message = builtinMessage(validator_name);
+            }
+        }
+        return result;
     }
 
     pub fn validateField(
@@ -169,21 +223,19 @@ pub const Engine = struct {
     }
 };
 
-const validator_funcs = @import("default.zig");
-
 test "validator registration and execution" {
     const allocator = zstd.testing.allocator;
 
     var engine = try Engine.init(allocator);
     defer engine.deinit();
 
-    try engine.registerValidator("alpha", validator_funcs.alphaValidator);
-    try engine.registerValidator("numeric", validator_funcs.numericValidator);
-    try engine.registerValidator("min_length", validator_funcs.minLengthValidator);
-    try engine.registerValidator("max_length", validator_funcs.maxLengthValidator);
-    try engine.registerValidator("min", validator_funcs.minValidator);
-    try engine.registerValidator("max", validator_funcs.maxValidator);
-    try engine.registerValidator("required", validator_funcs.requiredValidator);
+    try engine.registerValidator("alpha", defaults.alphaValidator);
+    try engine.registerValidator("numeric", defaults.numericValidator);
+    try engine.registerValidator("min_length", defaults.minLengthValidator);
+    try engine.registerValidator("max_length", defaults.maxLengthValidator);
+    try engine.registerValidator("min", defaults.minValidator);
+    try engine.registerValidator("max", defaults.maxValidator);
+    try engine.registerValidator("required", defaults.requiredValidator);
 
     const Spec = struct {
         field_name: []const u8,
@@ -333,9 +385,9 @@ test "validate field with multiple validators" {
     var engine = try Engine.init(allocator);
     defer engine.deinit();
 
-    try engine.registerValidator("alpha", validator_funcs.alphaValidator);
-    try engine.registerValidator("min_length", validator_funcs.minLengthValidator);
-    try engine.registerValidator("max_length", validator_funcs.maxLengthValidator);
+    try engine.registerValidator("alpha", defaults.alphaValidator);
+    try engine.registerValidator("min_length", defaults.minLengthValidator);
+    try engine.registerValidator("max_length", defaults.maxLengthValidator);
 
     var validators = try zstd.ArrayList(Validator).initCapacity(allocator, 0);
     defer validators.deinit(allocator);
@@ -369,4 +421,27 @@ test "validate field with multiple validators" {
     try zstd.testing.expect(results[0].valid);
     try zstd.testing.expect(results[1].valid);
     try zstd.testing.expect(results[2].valid);
+}
+
+test "builtin messages need no hashmap; custom messages override" {
+    const allocator = zstd.testing.allocator;
+
+    var eng = try Engine.init(allocator);
+    defer eng.deinit();
+
+    try zstd.testing.expectEqualStrings(
+        "Field is required",
+        eng.lookupMessage("required").?,
+    );
+
+    const failed = try eng.validate("field", .{ .string = "" }, "required", &.{});
+    try zstd.testing.expect(!failed.valid);
+    try zstd.testing.expectEqualStrings("Field is required", failed.error_message.?);
+
+    try eng.registerDefaultMessage("required", "Must be present");
+    try zstd.testing.expectEqualStrings("Must be present", eng.lookupMessage("required").?);
+
+    const overridden = try eng.validate("field", .{ .string = "" }, "required", &.{});
+    try zstd.testing.expect(!overridden.valid);
+    try zstd.testing.expectEqualStrings("Must be present", overridden.error_message.?);
 }

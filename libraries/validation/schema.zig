@@ -2,7 +2,6 @@ const zstd = @import("std");
 const lexer = @import("lexer.zig");
 const parser = @import("parser.zig");
 pub const engine = @import("engine.zig");
-const validator = @import("default.zig");
 
 pub const SchemaError = error{
     MissingDocumentation,
@@ -79,28 +78,7 @@ fn joinPath(allocator: zstd.mem.Allocator, prefix: []const u8, name: []const u8)
 }
 
 pub fn DefaultEngine(allocator: zstd.mem.Allocator) SchemaError!engine.Engine {
-    var e = engine.Engine.init(allocator) catch return error.OutOfMemory;
-    errdefer e.deinit();
-
-    e.registerValidator("alpha", validator.alphaValidator) catch return error.OutOfMemory;
-    e.registerValidator("numeric", validator.numericValidator) catch return error.OutOfMemory;
-    e.registerValidator("min_length", validator.minLengthValidator) catch return error.OutOfMemory;
-    e.registerValidator("max_length", validator.maxLengthValidator) catch return error.OutOfMemory;
-    e.registerValidator("min", validator.minValidator) catch return error.OutOfMemory;
-    e.registerValidator("max", validator.maxValidator) catch return error.OutOfMemory;
-    e.registerValidator("required", validator.requiredValidator) catch return error.OutOfMemory;
-    e.registerValidator("email", validator.emailValidator) catch return error.OutOfMemory;
-
-    e.registerDefaultMessage("alpha", "Field must contain only alphabetic characters") catch return error.OutOfMemory;
-    e.registerDefaultMessage("numeric", "Field must be numeric") catch return error.OutOfMemory;
-    e.registerDefaultMessage("min_length", "Field length is below minimum") catch return error.OutOfMemory;
-    e.registerDefaultMessage("max_length", "Field length exceeds maximum") catch return error.OutOfMemory;
-    e.registerDefaultMessage("min", "Value is below minimum") catch return error.OutOfMemory;
-    e.registerDefaultMessage("max", "Value exceeds maximum") catch return error.OutOfMemory;
-    e.registerDefaultMessage("required", "Field is required") catch return error.OutOfMemory;
-    e.registerDefaultMessage("email", "Invalid email format") catch return error.OutOfMemory;
-
-    return e;
+    return engine.Engine.init(allocator) catch return error.OutOfMemory;
 }
 
 pub fn register(
@@ -111,22 +89,14 @@ pub fn register(
     e.registerValidator(name, validator_fn) catch return error.OutOfMemory;
 }
 
-pub const default_validator_names = [_][]const u8{
-    "alpha",
-    "numeric",
-    "min_length",
-    "max_length",
-    "min",
-    "max",
-    "required",
-    "email",
+pub const default_validator_names = names: {
+    var names: [engine.builtins.len][]const u8 = undefined;
+    for (&names, engine.builtins) |*slot, b| slot.* = b.name;
+    break :names names;
 };
 
 pub fn isDefaultValidator(name: []const u8) bool {
-    for (default_validator_names) |n| {
-        if (zstd.mem.eql(u8, n, name)) return true;
-    }
-    return false;
+    return engine.builtinByName(name) != null;
 }
 
 pub fn isAllowedValidator(name: []const u8, extra: []const []const u8) bool {
@@ -433,7 +403,7 @@ pub fn Schema(comptime T: type) type {
 fn ensureCompiledRegistered(compiled: *const CompiledDoc, eng: *const engine.Engine) SchemaError!void {
     for (compiled.documentation.specs) |spec| {
         for (spec.validators) |rule| {
-            if (eng.validators.get(rule.name) == null) return error.ValidatorNotFound;
+            if (eng.lookup(rule.name) == null) return error.ValidatorNotFound;
         }
     }
 }
