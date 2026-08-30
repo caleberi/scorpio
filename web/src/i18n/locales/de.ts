@@ -94,6 +94,10 @@ export const de: Messages = {
       unavailable: 'Nicht verfügbar',
       samples: '{n} Stichproben',
       average: 'Ø {value}',
+      pages: 'Seiten in dieser Sitzung',
+      pageCount: '{n} Seiten',
+      empty: 'Öffne eine Seite, um Statistiken zu erfassen.',
+      current: 'Aktuell',
     },
   },
   article: {

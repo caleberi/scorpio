@@ -94,6 +94,10 @@ export const fr: Messages = {
       unavailable: 'Indisponible',
       samples: '{n} échantillons',
       average: 'moy. {value}',
+      pages: 'Pages de la session',
+      pageCount: '{n} pages',
+      empty: 'Ouvrez une page pour enregistrer des stats.',
+      current: 'Actuelle',
     },
   },
   article: {

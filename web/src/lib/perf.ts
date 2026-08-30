@@ -1,4 +1,4 @@
-const HISTORY_LIMIT = 32
+const HISTORY_LIMIT = 48
 
 type MemoryInfo = {
   usedJSHeapSize: number
@@ -12,38 +12,36 @@ export type PerfMemory = {
   limit: number
 }
 
-export type PerfSnapshot = {
-  loadMs: number | null
-  loadPrevMs: number | null
-  loadHistory: number[]
-  responseMs: number | null
-  responsePrevMs: number | null
-  responseHistory: number[]
-  memory: PerfMemory | null
+export type PageVisit = {
+  id: number
+  href: string
   path: string
+  loadMs: number | null
+  responseMs: number | null
+  responses: number[]
+  memory: PerfMemory | null
+  visitedAt: number
+}
+
+export type PerfSnapshot = {
+  visits: PageVisit[]
+  current: PageVisit | null
+  memory: PerfMemory | null
+  loadHistory: number[]
+  responseHistory: number[]
   sampledAt: number
 }
 
-const loadHistory: number[] = []
-const responseHistory: number[] = []
+const visits: PageVisit[] = []
 const listeners = new Set<() => void>()
 
 let started = false
 let navStart: number | null = null
-let lastPath = ''
+let pending: PageVisit | null = null
+let nextId = 1
 
 function last(values: number[]): number | null {
   return values.length ? values[values.length - 1] : null
-}
-
-function prev(values: number[]): number | null {
-  return values.length > 1 ? values[values.length - 2] : null
-}
-
-function push(values: number[], value: number) {
-  if (!Number.isFinite(value) || value < 0) return
-  values.push(value)
-  if (values.length > HISTORY_LIMIT) values.splice(0, values.length - HISTORY_LIMIT)
 }
 
 function emit() {
@@ -60,54 +58,79 @@ function readMemory(): PerfMemory | null {
   }
 }
 
+function pathFromHref(href: string): string {
+  try {
+    const url = href.startsWith('http')
+      ? new URL(href)
+      : new URL(href, typeof location === 'undefined' ? 'http://local' : location.origin)
+    return `${url.pathname}${url.search}` || '/'
+  } catch {
+    return href || '/'
+  }
+}
+
+function makeVisit(href: string): PageVisit {
+  return {
+    id: nextId++,
+    href,
+    path: pathFromHref(href),
+    loadMs: null,
+    responseMs: null,
+    responses: [],
+    memory: readMemory(),
+    visitedAt: Date.now(),
+  }
+}
+
+function trimVisits() {
+  if (visits.length > HISTORY_LIMIT) visits.splice(0, visits.length - HISTORY_LIMIT)
+}
+
+function commitVisit(visit: PageVisit, loadMs: number | null) {
+  if (loadMs != null && Number.isFinite(loadMs) && loadMs >= 0) visit.loadMs = loadMs
+  visit.memory = readMemory()
+  if (visit.responseMs == null) visit.responseMs = last(visit.responses)
+  visits.push(visit)
+  trimVisits()
+}
+
 function ingestNavigation() {
+  const href =
+    typeof location === 'undefined' ? '/' : `${location.pathname}${location.search}`
+  const visit = makeVisit(href)
   const entries = performance.getEntriesByType('navigation')
   const nav = entries[0] as PerformanceNavigationTiming | undefined
-  if (!nav) return
-  if (nav.duration > 0) push(loadHistory, nav.duration)
-  const response = nav.responseEnd - nav.requestStart
-  if (response > 0) push(responseHistory, response)
-  try {
-    lastPath = new URL(nav.name, location.origin).pathname || location.pathname
-  } catch {
-    lastPath = location.pathname
-  }
+  if (nav && nav.duration > 0) visit.loadMs = nav.duration
+  visits.push(visit)
 }
 
 export function startPerfCollector() {
   if (started || typeof performance === 'undefined') return
   started = true
   ingestNavigation()
-  if (typeof PerformanceObserver === 'undefined') return
-  try {
-    const observer = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) {
-        if (entry.entryType !== 'navigation') continue
-        const nav = entry as PerformanceNavigationTiming
-        if (nav.duration > 0) {
-          push(loadHistory, nav.duration)
-          emit()
-        }
-      }
-    })
-    observer.observe({ type: 'navigation', buffered: true })
-  } catch {
-    // Some browsers reject `type` + `buffered` together.
-  }
 }
 
-export function beginNavigation(path: string) {
+export function beginNavigation(href: string) {
   startPerfCollector()
+  if (pending) {
+    const elapsed = navStart != null ? performance.now() - navStart : null
+    commitVisit(pending, elapsed)
+    pending = null
+  }
   navStart = performance.now()
-  lastPath = path
+  pending = makeVisit(href)
+  emit()
 }
 
 export function endNavigation() {
-  if (navStart == null) return
+  if (!pending) return
   const start = navStart
   navStart = null
+  const visit = pending
   const commit = () => {
-    push(loadHistory, performance.now() - start)
+    if (pending !== visit) return
+    pending = null
+    commitVisit(visit, start == null ? null : performance.now() - start)
     emit()
   }
   if (typeof requestAnimationFrame === 'undefined') {
@@ -119,22 +142,29 @@ export function endNavigation() {
 
 export function recordResponse(ms: number) {
   startPerfCollector()
-  push(responseHistory, ms)
+  if (!Number.isFinite(ms) || ms < 0) return
+  const target = pending ?? visits[visits.length - 1]
+  if (!target) return
+  target.responses.push(ms)
+  if (target.responseMs == null) target.responseMs = ms
   emit()
 }
 
 export function snapshot(): PerfSnapshot {
   startPerfCollector()
-  if (!lastPath && typeof location !== 'undefined') lastPath = location.pathname
+  const list = pending ? [...visits, pending] : visits.slice()
+  const loadHistory = list
+    .map((visit) => visit.loadMs)
+    .filter((value): value is number => value != null)
+  const responseHistory = list
+    .map((visit) => visit.responseMs)
+    .filter((value): value is number => value != null)
   return {
-    loadMs: last(loadHistory),
-    loadPrevMs: prev(loadHistory),
-    loadHistory: loadHistory.slice(),
-    responseMs: last(responseHistory),
-    responsePrevMs: prev(responseHistory),
-    responseHistory: responseHistory.slice(),
+    visits: list,
+    current: pending ?? visits[visits.length - 1] ?? null,
     memory: readMemory(),
-    path: lastPath,
+    loadHistory,
+    responseHistory,
     sampledAt: Date.now(),
   }
 }
@@ -167,12 +197,20 @@ export function average(values: number[]): number | null {
 }
 
 export function formatStatLines(stats: PerfSnapshot): string[] {
+  const current = stats.current
   const memory = stats.memory
     ? `${formatBytes(stats.memory.used)} / ${formatBytes(stats.memory.limit)}`
     : 'unavailable'
-  return [
-    `Load time      ${formatMs(stats.loadMs)}`,
-    `Response time  ${formatMs(stats.responseMs)}`,
+  const lines = [
+    `Load time      ${formatMs(current?.loadMs ?? null)}`,
+    `Response time  ${formatMs(current?.responseMs ?? null)}`,
     `Memory         ${memory}`,
+    `Pages          ${stats.visits.length}`,
   ]
+  const recent = stats.visits.slice(-8)
+  for (const visit of recent) {
+    const path = visit.path.length > 28 ? `…${visit.path.slice(-27)}` : visit.path
+    lines.push(`  ${path.padEnd(28)} ${formatMs(visit.loadMs)}`)
+  }
+  return lines
 }

@@ -94,6 +94,10 @@ export const ja: Messages = {
       unavailable: '取得できません',
       samples: '{n} 件',
       average: '平均 {value}',
+      pages: 'このセッションのページ',
+      pageCount: '{n} ページ',
+      empty: 'ページを開くと統計が記録されます。',
+      current: '現在',
     },
   },
   article: {

@@ -92,6 +92,10 @@ export type Messages = {
       unavailable: string
       samples: string
       average: string
+      pages: string
+      pageCount: string
+      empty: string
+      current: string
     }
   }
   article: {
