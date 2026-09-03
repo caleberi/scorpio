@@ -1,115 +1,71 @@
 ---
-title: 'How Scorpio works: architecture and the pack pipeline'
-summary: 'A tour of Scorpio — Zig API, packed markdown, optional Cloudinary, Postgres comments, and the React frontend.'
+title: 'How Scorpio works'
+summary: 'Walking through the blog engine that serves this site — packed markdown, a Zig API, Postgres comments, and a React UI'
 authors:
-  - 'Scorpio'
+  - 'Adewole Caleb'
 date: '2026-08-11'
 topics:
+  - 'Zig'
   - 'Engineering'
   - 'Infrastructure'
+  - 'Blogging'
 type: 'Blog'
+image: '![image](../../../blobs/cover41.jpeg)'
 highlight: mint
 ---
 
-# How Scorpio works: architecture and the pack pipeline
+You are reading this on Scorpio. That is the point of the series.
 
-Scorpio is a markdown-first blog stack: you author plain `.md` files, pack them into content-addressed chunks, and serve them from a Zig HTTP API. A React SPA in `web/` reads that API and renders posts.
+The old guide in this slot was a neat architecture dump. Accurate enough at a distance, a bit wrong up close, and written like a README. I want the version I would actually send a friend: what I built, why the markdown never gets read from `pages/` at request time, and where the code still surprises me.
 
-## Big picture
+The short version. I write posts as `.md` files. `zig build pack` concatenates them into ~4 MiB chunk files and writes a `manifest.json`. A Zig process (Zap) loads that manifest, slices a document out of a chunk, and returns JSON. Postgres only knows slugs and comments. The React app in `web/` is just a reader.
+
+If you already read [why a manifest file can be a secret power](/posts/blog/projects/why-a-manifest-file), this is that idea with the rest of the machine around it.
+
+## Why not just read the markdown
+
+I could have pointed the server at `pages/` and opened files on every `GET`. That works until you have a lot of posts, or you want the bodies on a CDN, or you do not want the API host to carry a git checkout.
+
+A packed blog is closer to how I think about disk. One index. A handful of fat files. A seek, a read, done. Listing the index does not open twenty markdown files. Fetching `/blog/guides/intro` is `chunk`, `offset`, `length`.
+
+Same instinct as Hercules, smaller stakes. Hercules splits other people's files. Scorpio splits mine.
+
+## The shape of the thing
 
 ```mermaid
 flowchart TD
-  pages["pages/**/*.md"]
-  pack["zig build pack"]
-  staging["packed/staging"]
-  artifacts["packed/blog\nmanifest.json + chunk_*.bin"]
-  cloud["Cloudinary\noptional"]
-  db["Postgres\nblog rows + comments"]
-  api["zig build run\nZap :9090"]
-  web["web/\nVite + TanStack Router"]
-
-  pages --> pack
-  pack --> staging
-  staging --> artifacts
-  artifacts -->|upload| cloud
-  artifacts -->|prerun| db
-  artifacts --> api
-  cloud -.->|fallback fetch| api
-  api -->|"GET /blog*"| web
+  pages["pages/**/*.md"] --> pack["zig build pack"]
+  pack --> staging["packed/staging"]
+  staging --> artifacts["packed/blog\nmanifest.json + chunk_0000.dat"]
+  artifacts -->|raw upload| cloud["Cloudinary"]
+  artifacts -->|prerun| db["Postgres\nslug + comments"]
+  artifacts --> api["scorpio :9090"]
+  cloud -.->|chunk miss| api
+  api -->|"GET /blog*"| web["web/\nVite + TanStack"]
 ```
 
-At runtime the server does **not** read `pages/` directly. It loads the packed manifest and slices document bytes out of chunk files (local first, Cloudinary as fallback).
+Three rules I keep repeating to myself:
 
-## Content pipeline
+1. Request time does not walk `pages/`.
+2. The manifest is the catalogue. The chunks are the shelves.
+3. Comments are a different store. Bodies never go in Postgres.
 
-### Authoring
+## This series
 
-Markdown lives under `BLOG_INPUT_DIR` (see `.env`). With `BLOG_INPUT_DIR=pages` that includes:
+I split the walkthrough so each post can sit on one idea.
 
-- `pages/blog/**` — posts (nested folders become nested slugs, e.g. `blog/guides/intro`)
-- `pages/profile.md` — profile page (`profile`)
+1. [Packing markdown](/posts/blog/guides/scorpio/packing-markdown) — media rewrite, staging, then the packer
+2. [The manifest and the chunks](/posts/blog/guides/scorpio/manifest-and-chunks) — 4 MiB `.dat` files, slugs, incremental reuse
+3. [The Zig API](/posts/blog/guides/scorpio/the-zig-api) — Zap, the splat router, `BlogCache`, Cloudinary as fallback
+4. [Comments and Postgres](/posts/blog/guides/scorpio/comments-and-postgres) — prerun, `blogs` rows, comment trees
+5. [The React UI](/posts/blog/guides/scorpio/the-frontend) — cards, post view, mermaid, the floating console
 
-Optional YAML frontmatter drives the UI: `title`, `summary`, `authors`, `date`, `topics`, `highlight`.
+Read them in order if you can. Skip to the API or the UI if you already know why I pack.
 
-### Pack (`zig build pack`)
+## A thing I should say early
 
-1. **Media** — walk markdown, upload local images/videos when configured, rewrite links into `packed/staging/`.
-2. **Pack** — `libraries/processor/documents` packs staging into `packed/blog/`:
-   - `manifest.json` — document index (`slug`, `path`, `chunk`, `offset`, `length`, hashes)
-   - `chunk_NNNN.bin` — concatenated document payloads
-3. **Upload** — changed chunks + manifest go to Cloudinary when credentials are valid (local artifacts are always written).
+The README and the old guide disagree with the code in a few places. Chunk files are `chunk_0000.dat`, not `chunk_NNNN.bin`. Cloudinary failures during *media* upload abort the pack; failures during *chunk* upload only warn. The default `BLOG_INPUT_DIR` in `config.zig` is `pages/blog`, while `.env.sample` says `pages`. I will point at the code, not the comments I wrote when I was tired.
 
-### Prerun (`zig build prerun`)
+Anyway. That is the map.
 
-Upserts `blogs(slug, path)` from the manifest into Postgres so comment routes have a stable blog identity. `zig build run` depends on prerun.
-
-## Runtime architecture
-
-| Layer | Role |
-|-------|------|
-| **Zap** (`src/main.zig`) | HTTP listener (default port **9090**) |
-| **Router** (`libraries/router`) | Path matching, including `*slug` splats for nested posts |
-| **Actions** (`src/app/actions/blog.zig`) | List / get / comments / replies |
-| **Manifest + cache** | Boot-loads `packed/blog/manifest.json`; `BlogCache` serves slices and prefetches neighbors |
-| **CDN helper** | Prefer local chunk files; fall back to Cloudinary raw delivery |
-| **Postgres** | Comments and replies only — markdown bodies stay in the pack |
-
-### Main API shapes
-
-- `GET /blog` → `{ documents: [{ slug, path, modified_at, length }] }`
-- `GET /blog/*slug` → `{ slug, path, content, … }`
-- Comment CRUD under `/blog/:slug/comments…`
-
-## Frontend (`web/`)
-
-Vite + React + TanStack Router + Tailwind. In development, `/blog` is proxied to the Zig API so the SPA can call relative URLs.
-
-- Index / related cards from the list API
-- Post view renders markdown (GFM + raw HTML for embeds)
-- Folder sidebar mirrors packed `path`s
-- Floating console: `ls`, `open`, `theme set paper`, etc.
-
-```
-cd web && npm run dev   # http://localhost:5173
-```
-
-## Libraries worth knowing
-
-- `libraries/processor/documents` — load, pack, manifest
-- `libraries/processor/media` — image/video linking
-- `libraries/uploader/cloudinary` — media + pack upload
-- `libraries/router` — method/path routing and action binding
-- `libraries/validation` — schema-driven request validation
-
-## Day-to-day commands
-
-```bash
-# after editing pages/**
-zig build pack
-zig build run          # API + prerun
-
-# UI (separate terminal)
-cd web && npm run dev
-```
-
-Edit markdown → pack → restart (or keep run if you only need a fresh pack and reload the process) → refresh the SPA.
+Next: [packing markdown](/posts/blog/guides/scorpio/packing-markdown).
