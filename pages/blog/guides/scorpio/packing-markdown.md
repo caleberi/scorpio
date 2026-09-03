@@ -10,7 +10,7 @@ topics:
   - 'Cloudinary'
   - 'Markdown'
 type: 'Blog'
-image: '![image](../../../../blobs/cover41.jpeg)'
+image: '![image](../../../../blobs/cover44.webp)'
 highlight: amber
 ---
 

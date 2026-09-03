@@ -10,7 +10,7 @@ topics:
   - 'Engineering'
   - 'Caching'
 type: 'Blog'
-image: '![image](../../../../blobs/cover41.jpeg)'
+image: '![image](../../../../blobs/cover42.webp)'
 highlight: sky
 ---
 

@@ -10,7 +10,7 @@ topics:
   - 'Caching'
   - 'Disk'
 type: 'Blog'
-image: '![image](../../../../blobs/cover41.jpeg)'
+image: '![image](../../../../blobs/cover45.webp)'
 highlight: coral
 ---
 

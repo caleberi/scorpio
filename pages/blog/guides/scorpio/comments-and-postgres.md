@@ -10,7 +10,7 @@ topics:
   - 'Engineering'
   - 'SQL'
 type: 'Blog'
-image: '![image](../../../../blobs/cover41.jpeg)'
+image: '![image](../../../../blobs/cover46.webp)'
 highlight: violet
 ---
 

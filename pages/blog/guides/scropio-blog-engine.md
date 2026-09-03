@@ -1,5 +1,5 @@
 ---
-title: 'How Scorpio works'
+title: 'How Scorpio works :  The blog engine that serves this site'
 summary: 'Walking through the blog engine that serves this site — packed markdown, a Zig API, Postgres comments, and a React UI'
 authors:
   - 'Adewole Caleb'
