@@ -1,6 +1,6 @@
 ---
-title: 'Improving Currency Rate Flow'
-summary: 'A guide to improving currency rate flow'
+title: 'From Raw Quotes to Ranked Rates: A Multi-Provider FX Pipeline'
+summary: 'How to normalize, score, and rank currency quotes from multiple providers to pick a reliable FX rate.'
 authors:
   - 'Adewole Caleb'
 date: '2026-08-19'
