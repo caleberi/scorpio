@@ -10,7 +10,7 @@ topics:
   - 'GFS'
   - 'Metadata'
 type: 'Blog'
-image: '![image](../../../../blobs/replication-and-versioning.jpeg)'
+image: '![image](../../../../blobs/cover23.webp)'
 highlight: coral
 ---
 

@@ -1,5 +1,5 @@
 ---
-title: 'Hercules #1 — Chunks and the GFS idea'
+title: 'Chunks and the GFS idea'
 summary: 'Why Hercules copies the Google File System: 64MB chunks, a single master, and keeping data off the control path'
 authors:
   - 'Adewole Caleb'
@@ -10,7 +10,7 @@ topics:
   - 'GFS'
   - 'Engineering'
 type: 'Blog'
-image: '![image](../../../../blobs/cover20.webp)'
+image: '![image](../../../../blobs/cover35.webp)'
 highlight: amber
 ---
 

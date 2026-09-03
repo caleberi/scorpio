@@ -10,7 +10,7 @@ topics:
   - 'Storage'
   - 'GFS'
 type: 'Blog'
-image: '![image](../../../../blobs/cover18.webp)'
+image: '![image](../../../../blobs/cover20.webp)'
 highlight: sky
 ---
 

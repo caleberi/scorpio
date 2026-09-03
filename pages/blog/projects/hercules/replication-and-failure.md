@@ -10,7 +10,7 @@ topics:
   - 'Replication'
   - 'Failure Detection'
 type: 'Blog'
-image: '![image](../../../../blobs/cover14.jpeg)'
+image: '![image](../../../../blobs/cover24.webp)'
 highlight: violet
 ---
 

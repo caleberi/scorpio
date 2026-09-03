@@ -10,7 +10,7 @@ topics:
   - 'GFS'
   - 'Consistency'
 type: 'Blog'
-image: '![image](../../../../blobs/cover17.webp)'
+image: '![image](../../../../blobs/cover30.webp)'
 highlight: mint
 ---
 

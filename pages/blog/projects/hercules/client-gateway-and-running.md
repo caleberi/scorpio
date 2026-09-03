@@ -1,5 +1,5 @@
 ---
-title: 'Hercules #6 — Client, gateway, and running it'
+title: 'Client, gateway, and running it'
 summary: 'The Go SDK, the HTTP routes that actually exist, docker-compose with five chunkservers, and what I would change next'
 authors:
   - 'Adewole Caleb'
@@ -10,7 +10,7 @@ topics:
   - 'HTTP'
   - 'Docker'
 type: 'Blog'
-image: '![image](../../../../blobs/cover13.png)'
+image: '![image](../../../../blobs/cover29.webp)'
 highlight: orange
 ---
 
