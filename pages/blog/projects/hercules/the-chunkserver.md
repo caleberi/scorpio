@@ -50,7 +50,17 @@ On disk there is also `chunk.server.meta` — a GOB dump of that map, written ev
 
 ## The background loop
 
-One goroutine, several tickers:
+One goroutine, several tickers. Same process, different chores.
+
+```mermaid
+flowchart TD
+  start[ChunkServer up] --> hb[heartbeat every 5s]
+  start --> persist[persist meta every 10 min]
+  start --> gc[garbage every 5 min]
+  start --> arch[gzip idle chunks every 5 days]
+  hb -->|Garbage list| gc
+  hb -->|lease extensions| leases[local lease deque]
+```
 
 | Every | What |
 | --- | --- |

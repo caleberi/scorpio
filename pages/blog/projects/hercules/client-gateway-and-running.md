@@ -18,6 +18,14 @@ highlight: orange
 
 If you do not want to speak `net/rpc`, you probably never touch a chunkserver yourself. You talk to `HerculesClient`, or you talk to the gateway that wraps it.
 
+```mermaid
+flowchart LR
+  curl[curl / browser] --> gw[Gin gateway :8089]
+  gw --> sdk[HerculesClient]
+  sdk -->|metadata / leases| master[Master]
+  sdk -->|bytes| cs[Chunkservers]
+```
+
 ## The client is a lease cache with manners
 
 ```go

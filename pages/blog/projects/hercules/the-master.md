@@ -38,6 +38,19 @@ type MasterServer struct {
 
 Two maps, one process. That is the whole trick.
 
+```mermaid
+flowchart LR
+  subgraph ns [NamespaceManager]
+    T["/notes/hello.txt<br/>Length, Chunks"]
+  end
+  subgraph cm [ChunkServerManager]
+    H["handles [3, 4]"]
+    R["handle 3 → servers + lease"]
+  end
+  T -.->|"must stay in sync"| H
+  H --> R
+```
+
 ## The tree
 
 A node in the namespace is `NsTree`:
