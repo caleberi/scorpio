@@ -22,6 +22,16 @@ The server will not. The React app will not. If a post is not in the pack, it do
 
 `pack_blog.zig` is a short script with a loud job.
 
+```mermaid
+flowchart LR
+  pages[pages/*.md] --> img[rewrite images]
+  img --> vid[rewrite videos]
+  vid --> stage[packed/staging]
+  stage --> pack[Packer.pack]
+  pack --> out[chunks + manifest]
+  out -->|warn on fail| cloud[Cloudinary raw]
+```
+
 ```zig
 try ensureDir(cfg.blog.staging_dir);
 try ensureDir(cfg.blog.pack_dir);
