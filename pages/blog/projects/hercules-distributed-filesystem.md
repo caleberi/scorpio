@@ -1,476 +1,98 @@
 ---
 title: 'Hercules Distributed File System'
-summary: 'A production-grade implementation of the Google File System (GFS) in Go'
+summary: 'Walking through my GFS-style filesystem in Go — what the code actually does, not the LLM README'
 authors:
   - 'Adewole Caleb'
 date: '2026-08-15'
 topics:
   - 'Distributed Systems'
+  - 'Golang'
   - 'Engineering'
+  - 'GFS'
 type: 'Blog'
 image: '<video src="../../../blobs/dfs.mp4" data-scorpio="keep" autoplay loop muted playsinline preload="auto"></video>'
+highlight: lime
 ---
 
-# Hercules Distributed File System
-I haven't run my own benchmarks yet, as I am still fixing bugs and reviewing my decisions, but it works overall. The documentation was done via LLM, so I will be editing it poco a poco
-> 
-> A production-grade implementation of the **Google File System (GFS)** in Go
+I have been meaning to write about [Hercules](https://github.com/caleberi/hercules-dfs) properly.
 
-[![Go Version](https://img.shields.io/badge/Go-1.18+-00ADD8?style=flat&logo=go)](https://golang.org)
-[![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED?style=flat&logo=docker)](https://www.docker.com)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+The repo README still has that line I left at the top on purpose: I have not run my own benchmarks yet, I am still fixing bugs and reviewing decisions, and a lot of the docs were generated with an LLM. I said I would edit them poco a poco. This series is that edit, just in blog form.
 
----
+The short version. Hercules is my attempt at the [Google File System](https://research.google/pubs/pub51/) in Go. One master that only knows metadata. A bunch of chunkservers that actually hold the bytes. Files split into 64MB chunks. Writes go through a lease so one replica is in charge. Heartbeats keep the cluster honest. There is a φ Accrual detector sitting on Redis watching those heartbeats, and an HTTP gateway if you do not want to speak RPC.
 
-## 📚 Table of Contents
+It works overall. That is the honest sentence. Not "production-grade at Google scale". Not the fake 500 MB/s numbers that ended up in the README. It boots, it stores files, it replicates, and I am still poking at the decisions.
 
-- [Overview](#overview)
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Architecture](#architecture)
-- [Documentation](#documentation)
-- [Usage Examples](#usage-examples)
-- [Development](#development)
-- [Contributing](#contributing)
-- [License](#license)
+If you already read my note on [data replication and versioning](/posts/blog/hashnode/data-replication-and-versioning), this is the same idea with a full system around it.
 
----
+## Why even bother
 
-## Overview
+I wanted to feel the GFS paper, not just highlight it.
 
-Hercules is a distributed file system that faithfully implements the Google File System (GFS) design described in the seminal 2003 paper. Built entirely in **Go**, it provides a scalable, fault-tolerant storage solution for large-scale data with focus on high throughput and availability.
+Reading "the master is not on the data path" is one thing. Writing the client so it asks the master for a handle, then talks to a chunkserver directly, then retries because the lease expired while you were forwarding bytes — that is a different kind of understanding.
 
-https://github.com/user-attachments/assets/5cb81239-33ed-4429-a654-c5fa508730fc
+Same for versions. Same for "what do we do when a chunkserver just disappears". Same for "is this file even a file or just a path in a tree".
 
-https://github.com/user-attachments/assets/faf3553a-ace8-402b-8e81-9515685d9ad6
+Hercules is that homework. Public, messy in places, useful if you want to see how the pieces fit.
 
-https://github.com/user-attachments/assets/396b6f89-95a3-4ab8-9814-51b3caeb1f78
+## The shape of the thing
 
-
-### Why Hercules?
-
-- **Production-Ready**: Comprehensive implementation with RPC, HTTP gateway, and client SDK
-- **Fault Tolerant**: Automatic replication, failure detection using φ Accrual algorithm, and self-healing
-- **Scalable**: Designed to handle petabytes of data across thousands of machines
-- **Well-Documented**: Extensive documentation covering architecture, APIs, and deployment
-- **Docker-First**: Full Docker Compose setup for easy deployment and development
-
----
-
-## Features
-
-✅ **Core GFS Features**
-- 64MB chunk-based storage with configurable size
-- Triple replication (configurable) for data redundancy
-- Single master architecture for simplified coordination
-- Lease-based mutation protocol for consistency
-
-✅ **Advanced Capabilities**
-- **φ Accrual Failure Detection**: Probabilistic failure detection using network heartbeats
-- **HTTP Gateway**: RESTful API for file operations
-- **Go Client SDK**: Native Go client library
-- **Archive Manager**: Snapshot and archival support
-- **Real-time Monitoring**: System metrics and visualization
-
-✅ **Production Features**
-- Docker and Docker Compose deployment
-- Persistent metadata and chunk storage
-- Graceful shutdown and recovery
-- Comprehensive logging and error handling
-- Health checks and liveness probes
-
----
-
-## Quick Start
-
-### Using Docker (Recommended)
-
-```bash
-# Clone the repository
-git clone https://github.com/caleberi/hercules-dfs.git
-cd hercules-dfs
-
-# Start all services (master, 3 chunkservers, gateway, redis)
-docker-compose up -d
-
-# Verify services are running
-docker-compose ps
-
-# View logs
-docker-compose logs -f
+```mermaid
+flowchart TD
+  client["Client / Gateway"] -->|metadata only| master["Master :9090"]
+  master -->|heartbeats / leases| cs1["Chunkserver"]
+  master --> cs2["Chunkserver"]
+  master --> cs3["Chunkserver"]
+  client -->|read / write bytes| cs1
+  client --> cs2
+  client --> cs3
+  master --> redis["Redis — φ samples"]
+  cs1 --> redis
 ```
 
-Services will be available at:
-- **Master Server**: `localhost:9090`
-- **Chunkserver 1**: `localhost:8081`
-- **Chunkserver 2**: `localhost:8082`
-- **Chunkserver 3**: `localhost:8083`
-- **Gateway API**: `http://localhost:8089`
-- **Redis**: `localhost:6379`
+Three rules I kept coming back to:
 
-### Using Make
+1. The master does not store your file. It stores the map of the file.
+2. Data never has to bounce through the master. Client to chunkserver is the hot path.
+3. One replica is the primary for a while (a lease). The others follow its order.
 
-```bash
-# Build all Docker images
-make build-all
+If those three make sense, the rest of the series is just details.
 
-# Start services
-make up
+## What is actually in the repo
 
-# Check status
-make status
+Not the LLM feature list. The packages.
 
-# View logs
-make logs
+| Package | What it really does |
+| --- | --- |
+| `master_server` | Namespace, chunk handles, leases, re-replication |
+| `chunkserver` | `chunk-{handle}.chk` on disk, mutations, heartbeats |
+| `namespace_manager` | In-memory directory tree, soft delete |
+| `hercules` | Go client — lease cache, read/write/append |
+| `gateway` | Gin HTTP API over that client |
+| `download_buffer` | 10-second staging area before a write commits |
+| `detector` | φ Accrual samples in Redis |
+| `archive` | Gzip cold chunks. Not snapshots. The name is louder than the code. |
 
-# Stop services
-make down
-```
+`main.go` is a switch on `-ServerType`. Master, chunkserver, or gateway. Same binary, different hat.
 
-### Manual Setup
+## This series
 
-```bash
-# Install dependencies
-go mod download
+I split the walkthrough so each post can sit on one idea.
 
-# Terminal 1: Start Master
-go run main.go -ServerType master_server -serverAddr 127.0.0.1:9090 -rootDir ./data/master
+1. [Chunks and the GFS idea](/posts/blog/projects/hercules/chunks-and-architecture) — why 64MB, why a single master
+2. [The master and the namespace](/posts/blog/projects/hercules/the-master) — the tree, soft delete, GOB snapshots
+3. [Writes, leases, and the download buffer](/posts/blog/projects/hercules/writes-leases-and-the-buffer) — push data first, then commit
+4. [The chunkserver](/posts/blog/projects/hercules/the-chunkserver) — disk layout, heartbeats, checksums, the gzip "archive"
+5. [Replication and failure](/posts/blog/projects/hercules/replication-and-failure) — versions, copying chunks, φ Accrual
+6. [Client, gateway, and running it](/posts/blog/projects/hercules/client-gateway-and-running) — the SDK, the real HTTP routes, docker-compose
 
-# Terminal 2-4: Start Chunkservers
-go run main.go -ServerType chunk_server -serverAddr 127.0.0.1:8081 -masterAddr 127.0.0.1:9090 -rootDir ./data/chunk1
-go run main.go -ServerType chunk_server -serverAddr 127.0.0.1:8082 -masterAddr 127.0.0.1:9090 -rootDir ./data/chunk2
-go run main.go -ServerType chunk_server -serverAddr 127.0.0.1:8083 -masterAddr 127.0.0.1:9090 -rootDir ./data/chunk3
+Read them in order if you can. Skip around if you already know GFS and just want the Go bits.
 
-# Terminal 5: Start Gateway
-go run main.go -ServerType gateway_server -gatewayAddr 8089 -masterAddr 127.0.0.1:9090
-```
+## A thing I should say early
 
----
+Some of the docs in the repo describe APIs that do not exist. Upload endpoints, Prometheus, WebSockets, system status. The gateway that is actually compiled is smaller than that. I will point at the real routes in part 6 instead of repeating the generated reference.
 
-## Architecture
+Same for the README compose snippet that talks about three chunkservers. `docker-compose.yml` starts five.
 
-Hercules follows the GFS master-chunkserver architecture:
+Anyway. That is the map.
 
-```
-┌─────────────┐
-│   Clients   │
-│  (Gateway)  │
-└──────┬──────┘
-       │ ① Request metadata
-       ▼
-┌─────────────────┐
-│  Master Server  │◄──────┐
-│   (Metadata)    │       │ Heartbeats
-└─────────────────┘       │
-       │ ② Return chunk   │
-       │    locations     │
-       ▼                  │
-┌───────────────────────────────┐
-│     Chunkserver Network       │
-│  ┌────────┐  ┌────────┐  ┌───┤
-│  │Chunk 1 │  │Chunk 2 │  │...│
-│  └────────┘  └────────┘  └───┘
-└───────────────────────────────┘
-       │ ③ Read/Write data
-       ▼
-   [Client]
-```
-
-### Components
-
-| Component | Description | Port |
-|-----------|-------------|------|
-| **Master Server** | Manages metadata, namespace, chunk placement | 9090 |
-| **Chunkservers** | Store 64MB chunks, handle read/write | 8081-8083 |
-| **Gateway** | HTTP API for file operations | 8089 |
-| **Failure Detector** | Monitors server health (φ Accrual) | - |
-| **Redis** | Backend for failure detection data | 6379 |
-
-For detailed architecture, see [Architecture Documentation](docs/architecture/overview.md).
-
----
-
-## Documentation
-
-### 📖 Complete Documentation
-
-All documentation is in the [`docs/`](docs/) directory:
-
-**Getting Started**
-- [Complete Documentation Index](docs/README.md)
-- [Configuration Reference](docs/guides/configuration.md)
-- [Development Guide](docs/guides/development.md)
-
-**Architecture**
-- [System Overview](docs/architecture/overview.md) - High-level design and principles
-- Component Deep Dives (coming soon)
-
-**API Reference**
-- [Master Server API](docs/api/master-server.md) - RPC methods for metadata operations
-- [Chunk Server API](docs/api/chunk-server.md) - RPC methods for data operations
-- [Gateway HTTP API](docs/api/gateway.md) - REST endpoints
-
-**Deployment**
-- [Docker Deployment](docs/deployment/docker.md) - Deploy with Docker Compose
-- Local Development Setup (coming soon)
-- Production Deployment (coming soon)
-
----
-
-## Usage Examples
-
-### HTTP API (via Gateway)
-
-```bash
-# Create a file
-curl -X POST http://localhost:8089/api/v1/files \
-  -H "Content-Type: application/json" \
-  -d '{"path": "/myfile.txt"}'
-
-# Upload a file
-curl -X POST http://localhost:8089/api/v1/files/upload \
-  -F "file=@localfile.txt" \
-  -F "path=/remote/file.txt"
-
-# Download a file
-curl -X GET "http://localhost:8089/api/v1/files/download?path=/remote/file.txt" \
-  -o downloaded.txt
-
-# List directory
-curl -X GET "http://localhost:8089/api/v1/directories?path=/"
-
-# Get system status
-curl -X GET http://localhost:8089/api/v1/system/status | jq
-```
-
-### Go SDK
-
-```go
-import "github.com/caleberi/distributed-system/hercules"
-
-// Create client
-client := hercules.NewHerculesClient("127.0.0.1:9090")
-
-// Create file
-err := client.CreateFile("/myfile.txt")
-
-// Write data
-data := []byte("Hello, Hercules!")
-err = client.Write("/myfile.txt", 0, data)
-
-// Read data
-readData, err := client.Read("/myfile.txt", 0, len(data))
-
-// List directory
-files, err := client.List("/")
-```
-
-See [API Documentation](docs/api/) for complete reference.
-
----
-
-## Development`
-
-
-## Development
-
-### Prerequisites
-
-- Go 1.18+
-- Docker & Docker Compose (for containerized development)
-- Redis (for failure detection)
-- Make (optional, for build automation)
-
-### Local Development Setup
-
-```bash
-# Clone repository
-git clone https://github.com/caleberi/hercules-dfs.git
-cd hercules-dfs
-
-# Install dependencies
-go mod download
-
-# Run tests
-go test ./...
-
-# Run with hot reload (using air or similar)
-# See docs/guides/development.md for detailed setup
-```
-
-### Running Tests
-
-```bash
-# Unit tests
-go test ./...
-
-# With coverage
-go test -cover ./...
-
-# Integration tests
-python dtest.py
-
-# Benchmarks
-go test -bench=. ./...
-```
-
-### Project Structure
-
-```
-hercules/
-├── main.go              # Entry point
-├── master_server/       # Master server implementation
-├── chunkserver/         # Chunkserver implementation
-├── gateway/             # HTTP gateway
-├── hercules/            # Client SDK
-├── failure_detector/    # Failure detection (φ Accrual)
-├── namespace_manager/   # Directory/file management
-├── common/              # Shared types and constants
-├── rpc_struct/          # RPC definitions
-├── docs/                # Documentation
-└── example/             # Example applications
-```
-
-See [Development Guide](docs/guides/development.md) for detailed information.
-
----
-
-## Contributing
-
-We welcome contributions! Here's how you can help:
-
-- 🐛 **Report Bugs**: Open an issue with detailed reproduction steps
-- 💡 **Suggest Features**: Share your ideas for improvements
-- 📝 **Improve Documentation**: Help make our docs even better
-- 🔧 **Submit Pull Requests**: Fix bugs or implement new features
-
-### Contribution Guidelines
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes with clear commit messages
-4. Add tests for new functionality
-5. Ensure all tests pass (`go test ./...`)
-6. Submit a Pull Request
-
-For detailed guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
----
-
-## Performance & Benchmarks
-
-Hercules is designed for high throughput:
-
-- **Write Throughput**: ~500 MB/s per chunkserver
-- **Read Throughput**: ~800 MB/s (direct from chunkserver)
-- **Concurrent Appends**: Thousands per second
-- **Metadata Ops**: ~10,000 ops/sec (master)
-
-*Benchmarks run on standard commodity hardware (4 cores, 8GB RAM, SSD)*
-
----
-
-## Use Cases
-
-Hercules is ideal for:
-
-- **Data Lakes**: Store massive amounts of unstructured data
-- **Log Aggregation**: Collect and store logs from distributed systems
-- **Media Storage**: Store large media files with high availability
-- **Backup Systems**: Reliable backup storage with replication
-- **Research**: Study distributed file systems and fault tolerance
-
----
-
-## Roadmap
-
-- [x] Core GFS implementation (master, chunkservers, client)
-- [x] Docker deployment
-- [x] HTTP Gateway
-- [x] φ Accrual failure detection
-- [x] Comprehensive documentation
-- [ ] Multi-master support for high availability
-- [ ] Encryption at rest and in transit
-- [ ] Erasure coding for storage efficiency
-- [ ] Kubernetes deployment manifests
-- [ ] Web UI for administration
-- [ ] S3-compatible API
-
----
-
-## FAQ
-
-**Q: Is this production-ready?**  
-A: Hercules is feature-complete and stable, but has not been battle-tested at Google scale. Use with appropriate testing for your use case.
-
-**Q: How does this compare to HDFS?**  
-A: Similar design principles, but Hercules focuses on the original GFS design while HDFS has evolved with additional features.
-
-**Q: Can I use this for small files?**  
-A: Yes, but 64MB chunks may waste space. Consider adjusting chunk size in configuration.
-
-**Q: What about POSIX compatibility?**  
-A: Hercules does not aim for full POSIX compatibility, similar to GFS. It's optimized for append operations and large files.
-
----
-
-## Resources
-
-### Papers & References
-
-- [The Google File System (2003)](https://research.google/pubs/pub51/) - Original GFS paper
-- [φ Accrual Failure Detection](https://ieeexplore.ieee.org/document/1353004) - Failure detection algorithm
-
-### Related Projects
-
-- [HDFS](https://hadoop.apache.org/docs/r1.2.1/hdfs_design.html) - Hadoop Distributed File System
-- [Ceph](https://ceph.io/) - Modern distributed storage
-- [MinIO](https://min.io/) - S3-compatible object storage
-
----
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## Acknowledgements
-
-This project is inspired by the groundbreaking work of:
-
-> **The Google File System**  
-> Sanjay Ghemawat, Howard Gobioff, and Shun-Tak Leung  
-> *ACM SIGOPS Operating Systems Review*, 37(5), 2003
-
-Special thanks to:
-- All contributors to this project
-- The Go community for excellent tools and libraries
-- The distributed systems research community
-
----
-
-## Support
-
-- 📧 **Email**: Create an issue on GitHub
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/caleberi/hercules-dfs/discussions)
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/caleberi/hercules-dfs/issues)
-- 📖 **Documentation**: [docs/](docs/)
-
----
-
-<div align="center">
-
-**Built with ❤️ using Go**
-
-[⬆ Back to Top](#hercules-distributed-file-system)
-
-</div>
-
-
-
-
-
-
-
-
+Next: [chunks and the GFS idea](/posts/blog/projects/hercules/chunks-and-architecture).
