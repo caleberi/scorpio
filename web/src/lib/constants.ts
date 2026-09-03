@@ -20,7 +20,7 @@ export const TREE_INDENT_PX = 12
 export const WORDS_PER_MINUTE = 220
 export const EXCERPT_MAX_CHARS = 160
 export const RELATED_ARTICLE_COUNT = 2
-export const LIST_PAGE_SIZE = 6
+export const LIST_PAGE_SIZE = 8
 
 export const NS_TO_MS_THRESHOLD = 1e12
 export const NS_TO_MS = 1e6

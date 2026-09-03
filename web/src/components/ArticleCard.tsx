@@ -46,9 +46,9 @@ export function ArticleCard({
     <Link
       to="/posts/$"
       params={{ _splat: slug }}
-      className="group grid gap-4 sm:grid-cols-[160px_1fr]"
+      className="group grid items-start gap-4 sm:grid-cols-[160px_1fr]"
     >
-      <div className="border border-ink bg-surface">
+      <div className="w-full border border-ink bg-surface sm:w-[160px]">
         <div className="flex h-7 items-center gap-1.5 border-b border-ink/40 px-2">
           <span className="h-1.5 w-1.5 rounded-full bg-ink/70" />
           <span className="h-1.5 w-1.5 rounded-full bg-ink/70" />
@@ -57,11 +57,16 @@ export function ArticleCard({
             {interpolate(t.article.figure, { n: figure })}
           </span>
         </div>
-        <div className="article-card-check flex h-28 items-center justify-center overflow-hidden">
+        <div className="article-card-check relative h-28 overflow-hidden">
           {cover ? (
-            <CoverMediaView media={cover} className="h-full w-full object-cover" />
+            <CoverMediaView
+              media={cover}
+              className="absolute inset-0 size-full object-cover"
+            />
           ) : (
-            <div className="h-10 w-16 border border-ink/50" />
+            <div className="flex h-full items-center justify-center">
+              <div className="h-10 w-16 border border-ink/50" />
+            </div>
           )}
         </div>
       </div>
