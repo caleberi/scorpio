@@ -1,5 +1,5 @@
 ---
-title: 'Hercules #3 — Writes, leases, and the download buffer'
+title: 'Writes, leases, and the download buffer'
 summary: 'Push the bytes first, then ask the primary to commit. How Hercules writes without sending the payload twice.'
 authors:
   - 'Adewole Caleb'

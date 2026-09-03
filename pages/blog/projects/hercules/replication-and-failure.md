@@ -1,5 +1,5 @@
 ---
-title: 'Hercules #5 — Replication and failure'
+title: 'Replication and failure'
 summary: 'Chunk versions, copying a replica when the count drops, and a φ Accrual detector that currently logs more than it decides'
 authors:
   - 'Adewole Caleb'

@@ -1,5 +1,5 @@
 ---
-title: 'Hercules #2 — The master and the namespace'
+title: 'The master and the namespace'
 summary: 'How Hercules keeps the file tree, hands out chunk handles, and persists metadata without a real operation log'
 authors:
   - 'Adewole Caleb'

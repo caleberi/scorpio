@@ -1,5 +1,5 @@
 ---
-title: 'Hercules #4 — The chunkserver'
+title: 'The chunkserver'
 summary: 'chunk-14.chk on disk, heartbeats every 5 seconds, lazy SHA-256, and an archive manager that is really just gzip'
 authors:
   - 'Adewole Caleb'
