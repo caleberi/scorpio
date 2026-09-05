@@ -22,7 +22,6 @@ fn load_environment_variables(allocator: zstd.mem.Allocator, filepath: []const u
     const basename = fs.path.basename(filepath);
     if (basename.len == 0) return error.InvalidPath;
 
-    // Zig treats names like `.env` as having an empty extension; still allow them.
     const ext = fs.path.extension(basename);
     if (ext.len == 0 and basename[0] != '.') return error.InvalidPath;
 
@@ -52,11 +51,7 @@ fn load_environment_variables(allocator: zstd.mem.Allocator, filepath: []const u
 
         if (key.len == 0) continue;
 
-        const resolved_value = try resolve_variables(
-            allocator,
-            value,
-            env,
-        );
+        const resolved_value = try resolve_variables(allocator, value, env);
         defer allocator.free(resolved_value);
         try env.put(key, resolved_value);
     }
@@ -64,11 +59,7 @@ fn load_environment_variables(allocator: zstd.mem.Allocator, filepath: []const u
     return env;
 }
 
-fn resolve_variables(
-    allocator: zstd.mem.Allocator,
-    value: []const u8,
-    environment: zstd.process.Environ.Map,
-) ![]u8 {
+fn resolve_variables(allocator: zstd.mem.Allocator, value: []const u8, environment: zstd.process.Environ.Map) ![]u8 {
     var result = try zstd.ArrayList(u8).initCapacity(allocator, value.len);
     errdefer result.deinit(allocator);
 
