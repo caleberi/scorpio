@@ -367,14 +367,32 @@
   margin: 0 auto;
 }
 
-.post-cover,
-.post-cover.cover-media {
+.post-cover {
+  position: relative;
   display: block;
   width: 100%;
+  max-width: 860px;
+  aspect-ratio: 860 / 460;
   height: auto;
   margin: 1.5rem 0 2rem;
+  overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--color-line) 40%, transparent);
   background: var(--color-surface);
+  view-transition-name: post-cover;
+}
+
+.post-cover .cover-media,
+.post-cover.cover-media {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: none;
+  background: transparent;
+  object-fit: cover;
+  object-position: center;
 }
 
 video.cover-media {
@@ -409,16 +427,21 @@ video.cover-media {
 
 .post-shell-title {
   grid-area: title;
+  overflow-anchor: none;
+  view-transition-name: post-title;
 }
 
 .post-shell-tree {
   grid-area: tree;
+  overflow-anchor: none;
 }
 
 .post-shell-meta {
   grid-area: meta;
   min-width: 0;
   padding: 2rem 1rem 2.5rem;
+  overflow-anchor: none;
+  view-transition-name: post-meta;
 }
 
 .post-shell-body {
@@ -510,6 +533,28 @@ video.cover-media {
   .post-shell.is-reading .post-cover {
     margin-top: 0;
   }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-group(post-cover),
+::view-transition-group(post-title),
+::view-transition-group(post-meta) {
+  animation-duration: 0.55s;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-old(post-cover),
+::view-transition-new(post-cover) {
+  height: 100%;
+  overflow: clip;
+  object-fit: cover;
+  animation-duration: 0.55s;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .article-card-check .cover-media {
@@ -988,6 +1033,12 @@ html[data-theme-mode="dark"] .lang-icon-field {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .post-cover,
+  .post-shell-title,
+  .post-shell-meta {
+    view-transition-name: none;
+  }
+
   .article-tag {
     animation: none;
     transform: rotate(var(--tag-tilt, 0deg));

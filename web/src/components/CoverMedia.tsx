@@ -29,8 +29,11 @@ export function CoverMediaView({
         <img
           src={media.src}
           alt=""
+          width={860}
+          height={460}
           className={cn('cover-media', className)}
           loading={eager ? 'eager' : 'lazy'}
+          decoding="async"
           referrerPolicy="no-referrer"
         />
       )

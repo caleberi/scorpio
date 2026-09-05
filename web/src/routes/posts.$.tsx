@@ -122,7 +122,9 @@ function BlogPost() {
         ) : (
           <>
             {cover ? (
-              <CoverMediaView media={cover} className="post-cover" eager />
+              <div className="post-cover">
+                <CoverMediaView media={cover} eager />
+              </div>
             ) : null}
             <MarkdownBody
               content={body}
