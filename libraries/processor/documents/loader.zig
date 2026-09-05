@@ -18,8 +18,10 @@ pub const Folder = struct {
     path: []const u8,
 
     parent_index: ?usize,
+    // files in this folder
     file_indices: []usize,
 
+    // subfolders of this folder
     child_indices: []usize,
     modified_at: i128,
     created_at: i128,
@@ -43,8 +45,8 @@ pub const Directory = struct {
     folders: []Folder,
     files: []File,
 
-    folder_by_path: zstd.StringHashMap(usize),
     file_by_path: zstd.StringHashMap(usize),
+    folder_by_path: zstd.StringHashMap(usize),
 
     pub fn load(allocator: zstd.mem.Allocator, path: []const u8) !Directory {
         var arena = zstd.heap.ArenaAllocator.init(allocator);
