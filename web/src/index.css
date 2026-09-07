@@ -218,8 +218,8 @@
   max-width: 100%;
   height: auto;
   margin: 1.5rem 0 0.5rem;
-  border: 1px solid color-mix(in srgb, var(--color-line) 40%, transparent);
-  background: var(--color-surface);
+  border: none;
+  background: transparent;
 }
 
 .prose-blog img.md-img-center {
