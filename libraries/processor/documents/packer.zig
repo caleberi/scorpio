@@ -116,8 +116,7 @@ pub const Packer = struct {
         const planned = try self.selectAndDiff();
         defer self.freePayloads(planned);
 
-        const should_compact = self.shouldCompact(planned) or self.prevExtensionMismatch();
-        if (self.prev != null and should_compact) {
+        if (self.shouldCompact(planned) or self.prevExtensionMismatch()) {
             try self.compact(planned);
         } else {
             try self.emitIncremental(planned);
@@ -227,7 +226,7 @@ pub const Packer = struct {
     /// survives if at least one reused document still points into it; the bytes
     /// of everything else in that chunk are dead weight until we compact.
     fn shouldCompact(self: *Packer, planned: []const Planned) bool {
-        const prev = &self.prev.?;
+        const prev = &(self.prev orelse return false);
 
         var live_by_chunk = zstd.AutoHashMap(u32, u64).init(self.allocator);
         defer live_by_chunk.deinit();
