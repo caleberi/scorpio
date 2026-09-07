@@ -26,6 +26,7 @@ pub const dotenv = struct {
 
 pub const uploader = struct {
     pub const cloudinary = @import("uploader/cloudinary.zig");
+    pub const pool = @import("uploader/pool.zig");
 };
 
 pub const router = @import("router/root.zig");
@@ -45,6 +46,7 @@ test {
     _ = processor.images;
     _ = processor.videos;
     _ = uploader.cloudinary;
+    _ = uploader.pool;
     _ = router;
     _ = dotenv.loader;
     _ = dotenv.binder;
