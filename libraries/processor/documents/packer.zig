@@ -71,14 +71,12 @@ pub const Packer = struct {
     out_dir: ?fs.Dir = null,
     prev: ?manifest.Manifest = null,
 
-    // Active chunk write state.
     current_chunk: u32 = 0,
     current_offset: u64 = 0,
     chunk_file: ?fs.File = null,
     chunk_name: []const u8 = &.{},
     chunk_hasher: Sha256 = undefined,
 
-    // Accumulated manifest entries.
     docs: zstd.ArrayList(manifest.DocumentEntry) = .empty,
     chunks: zstd.ArrayList(manifest.ChunkEntry) = .empty,
 
@@ -95,14 +93,17 @@ pub const Packer = struct {
         if (self.chunk_file) |file| file.close();
         if (self.out_dir) |*dir| dir.close();
         if (self.prev) |*prev| prev.deinit();
+
         self.docs.deinit(self.allocator);
         self.chunks.deinit(self.allocator);
         self.arena.deinit();
+
         self.* = undefined;
     }
 
     pub fn pack(self: *Packer) !void {
         try self.openOutputDir();
+
         self.prev = manifest.Manifest.load(
             self.allocator,
             self.out_dir.?,
@@ -115,7 +116,8 @@ pub const Packer = struct {
         const planned = try self.selectAndDiff();
         defer self.freePayloads(planned);
 
-        if (self.prev != null and (self.shouldCompact(planned) or self.prevExtensionMismatch())) {
+        const should_compact = self.shouldCompact(planned) or self.prevExtensionMismatch();
+        if (self.prev != null and should_compact) {
             try self.compact(planned);
         } else {
             try self.emitIncremental(planned);

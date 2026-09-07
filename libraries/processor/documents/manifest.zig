@@ -1,4 +1,5 @@
 const zstd = @import("std");
+const common = @import("common");
 const fs = @import("../../compat_fs.zig");
 
 /// One packed chunk file on disk. Chunks are immutable once written.
@@ -53,28 +54,34 @@ pub const Manifest = struct {
     /// Read and parse `manifest_name` from `dir`. Returns error.FileNotFound
     /// when there is no prior manifest so callers can fall back to a full pack.
     pub fn load(allocator: zstd.mem.Allocator, dir: fs.Dir, manifest_name: []const u8) !Manifest {
-        const bytes = try dir.readFileAlloc(allocator, manifest_name, max_manifest_bytes);
+        const bytes = try dir.readFileAlloc(
+            allocator,
+            manifest_name,
+            max_manifest_bytes,
+        );
         defer allocator.free(bytes);
 
         var arena = zstd.heap.ArenaAllocator.init(allocator);
         errdefer arena.deinit();
 
-        const data = try zstd.json.parseFromSliceLeaky(
-            Data,
-            arena.allocator(),
-            bytes,
-            .{
-                .ignore_unknown_fields = true,
-                .allocate = .alloc_always,
-            },
-        );
+        const data = try common.json.deserializeLeakyOpts(Data, arena.allocator(), bytes, .{
+            .allocate = .alloc_always,
+            .ignore_unknown_fields = true,
+        });
 
         var doc_by_slug = zstd.StringHashMap(usize).init(allocator);
         errdefer doc_by_slug.deinit();
 
-        for (data.documents, 0..) |doc, index| {
-            try doc_by_slug.put(doc.slug, index);
-        }
+        const Ctx = struct {
+            map: *zstd.StringHashMap(usize),
+            index: usize = 0,
+            fn call(ctx: *@This(), doc: DocumentEntry) !void {
+                try ctx.map.put(doc.slug, ctx.index);
+                ctx.index += 1;
+            }
+        };
+        var ctx = Ctx{ .map = &doc_by_slug };
+        try common.utils.forEach(DocumentEntry, data.documents, &ctx, Ctx.call);
 
         return .{
             .arena = arena,
@@ -84,13 +91,8 @@ pub const Manifest = struct {
     }
 
     /// Serialize `data` to `manifest_name` inside `dir` as pretty JSON.
-    pub fn write(
-        allocator: zstd.mem.Allocator,
-        dir: fs.Dir,
-        manifest_name: []const u8,
-        data: Data,
-    ) !void {
-        const bytes = try zstd.json.Stringify.valueAlloc(
+    pub fn write(allocator: zstd.mem.Allocator, dir: fs.Dir, manifest_name: []const u8, data: Data) !void {
+        const bytes = try common.json.serializeOpts(
             allocator,
             data,
             .{
