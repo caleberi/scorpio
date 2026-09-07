@@ -192,10 +192,17 @@ pub fn forEach(
     comptime T: type,
     items: []const T,
     context: anytype,
-    comptime f: fn (@TypeOf(context), T) void,
-) void {
-    for (items) |item| {
-        f(context, item);
+    comptime f: anytype,
+) @typeInfo(@TypeOf(f)).@"fn".return_type.? {
+    const Ret = @typeInfo(@TypeOf(f)).@"fn".return_type.?;
+    if (comptime @typeInfo(Ret) == .error_union) {
+        for (items) |item| {
+            try f(context, item);
+        }
+    } else {
+        for (items) |item| {
+            f(context, item);
+        }
     }
 }
 

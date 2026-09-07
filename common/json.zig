@@ -39,6 +39,15 @@ pub fn deserializeLeaky(
     return json.parseFromSliceLeaky(T, allocator, text, .{});
 }
 
+pub fn deserializeLeakyOpts(
+    comptime T: type,
+    allocator: zstd.mem.Allocator,
+    text: []const u8,
+    options: json.ParseOptions,
+) !T {
+    return json.parseFromSliceLeaky(T, allocator, text, options);
+}
+
 const testing = zstd.testing;
 
 test "serialize / deserialize like JSON.stringify / JSON.parse" {
