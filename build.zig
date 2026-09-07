@@ -26,11 +26,13 @@ const LibraryModules = struct {
 
     libraries: *zstd.Build.Module,
     common: *zstd.Build.Module,
+    primitives: *zstd.Build.Module,
 
     fn imports(self: LibraryModules) [import_count]ModuleImport {
         return .{
             .{ .name = "libraries", .module = self.libraries },
             .{ .name = "common", .module = self.common },
+            .{ .name = "primitives", .module = self.primitives },
         };
     }
 };
@@ -75,8 +77,14 @@ fn buildLibraries(
         .target = target,
         .optimize = optimize,
     });
+    const primitives = b.addModule("primitives", .{
+        .root_source_file = b.path("primitives/root.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
     return .{
         .common = common,
+        .primitives = primitives,
         .libraries = blk: {
             const libraries_mod = b.addModule("libraries", .{
                 .root_source_file = b.path("libraries/root.zig"),
@@ -85,6 +93,7 @@ fn buildLibraries(
                 .imports = &.{
                     .{ .name = "build_info", .module = build_info },
                     .{ .name = "common", .module = common },
+                    .{ .name = "primitives", .module = primitives },
                     .{ .name = "zap", .module = zap },
                 },
                 .link_libc = true,
@@ -257,6 +266,7 @@ pub fn build(b: *zstd.Build) !void {
             .imports = &.{
                 .{ .name = "build_info", .module = build_info },
                 .{ .name = "common", .module = libraries.common },
+                .{ .name = "primitives", .module = libraries.primitives },
                 .{ .name = "zap", .module = dependencies.zap },
             },
         }),
@@ -287,6 +297,16 @@ pub fn build(b: *zstd.Build) !void {
     });
     const run_common_unit_tests = b.addRunArtifact(common_unit_tests);
 
+    const primitives_unit_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("primitives/root.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+        .filters = test_filters,
+    });
+    const run_primitives_unit_tests = b.addRunArtifact(primitives_unit_tests);
+
     const exe_unit_tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
@@ -300,6 +320,7 @@ pub fn build(b: *zstd.Build) !void {
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_common_unit_tests.step);
+    test_step.dependOn(&run_primitives_unit_tests.step);
     test_step.dependOn(&run_router_unit_tests.step);
     test_step.dependOn(&run_libraries_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
