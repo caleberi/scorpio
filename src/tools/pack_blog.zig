@@ -6,6 +6,7 @@ const images = libraries.processor.images;
 const videos = libraries.processor.videos;
 
 const Cloudinary = libraries.uploader.cloudinary.Cloudinary;
+const upload_pool = libraries.uploader.pool;
 const Directory = libraries.processor.documents.loader.Directory;
 const Packer = libraries.processor.documents.packer.Packer;
 const Manifest = libraries.processor.documents.manifest.Manifest;
@@ -141,30 +142,41 @@ pub fn main(init: std.process.Init) !void {
     var manifest = try Manifest.load(allocator, pack_dir, "manifest.json");
     defer manifest.deinit();
 
+    var job_arena = std.heap.ArenaAllocator.init(allocator);
+    defer job_arena.deinit();
+    const job_strings = job_arena.allocator();
+
+    var jobs: std.ArrayList(upload_pool.Job) = .empty;
+    defer jobs.deinit(allocator);
+    var job_meta: std.ArrayList(struct { file: []const u8, sha256: []const u8 }) = .empty;
+    defer job_meta.deinit(allocator);
+
     for (manifest.data.chunks) |chunk| {
         const prev = upload_state.chunks.get(chunk.file);
         const changed = prev == null or !std.mem.eql(u8, prev.?, chunk.sha256);
         if (!changed) continue;
 
-        const local_path = try fs.path.join(allocator, &.{ cfg.blog.pack_dir, chunk.file });
-        defer allocator.free(local_path);
-        const pid = try publicId(allocator, cfg.cloudinary.pack_prefix, chunk.file);
-        defer allocator.free(pid);
-
-        std.log.info("uploading packed chunk {s}", .{chunk.file});
-        var uploaded = cloud.uploadFile(local_path, .{
-            .resource_type = .raw,
+        const local_path = try fs.path.join(job_strings, &.{ cfg.blog.pack_dir, chunk.file });
+        const pid = try publicId(job_strings, cfg.cloudinary.pack_prefix, chunk.file);
+        try jobs.append(allocator, .{
+            .id = jobs.items.len,
+            .path = local_path,
             .public_id = pid,
+            .resource_type = .raw,
             .overwrite = true,
             .invalidate = true,
-        }) catch |err| {
-            std.log.warn("chunk upload skipped for {s}: {}", .{ chunk.file, err });
-            continue;
-        };
-        defer uploaded.deinit();
+            .label = chunk.file,
+        });
+        try job_meta.append(allocator, .{ .file = chunk.file, .sha256 = chunk.sha256 });
+    }
 
-        const key = try upload_state.arena.allocator().dupe(u8, chunk.file);
-        const val = try upload_state.arena.allocator().dupe(u8, chunk.sha256);
+    var outcome = try upload_pool.run(allocator, io, &cloud, jobs.items);
+    defer outcome.deinit();
+    for (outcome.results) |result| {
+        if (!result.ok) continue;
+        const meta = job_meta.items[result.id];
+        const key = try upload_state.arena.allocator().dupe(u8, meta.file);
+        const val = try upload_state.arena.allocator().dupe(u8, meta.sha256);
         try upload_state.chunks.put(allocator, key, val);
     }
 
