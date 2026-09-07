@@ -2,6 +2,7 @@ const zstd = @import("std");
 const fs = @import("../../compat_fs.zig");
 const build_info = @import("build_info");
 const cloudinary = @import("../../uploader/cloudinary.zig");
+const upload_pool = @import("../../uploader/pool.zig");
 const loader = @import("../documents/loader.zig");
 const common = @import("common");
 const unixTimestamp = common.utils.unixTimestamp;
@@ -114,6 +115,36 @@ const Ref = struct {
     after: []const u8,
 };
 
+const RewriteRef = struct {
+    start: usize,
+    end: usize,
+    key: []const u8,
+    before: []const u8,
+    after: []const u8,
+};
+
+const ScannedDoc = struct {
+    rel_md: []const u8,
+    content: []const u8,
+    refs: []RewriteRef,
+};
+
+const UniqueAsset = struct {
+    key: []const u8,
+    abs_path: []const u8,
+    hex: []const u8,
+    public_id: []const u8,
+    tag: Lifecycle,
+    needs_upload: bool,
+    should_delete: bool,
+};
+
+fn mergeTag(a: Lifecycle, b: Lifecycle) Lifecycle {
+    if (a == .update or b == .update) return .update;
+    if (a == .delete or b == .delete) return .delete;
+    return .keep;
+}
+
 pub const Processor = struct {
     allocator: zstd.mem.Allocator,
     config: Config,
@@ -144,9 +175,9 @@ pub const Processor = struct {
         self.* = undefined;
     }
 
-    /// Load the prior linkage, walk the input tree, rewrite every markdown
-    /// document into the staging dir, optionally prune orphans, and persist the
-    /// updated linkage.
+    /// Load the prior linkage, scan every markdown document, upload unique
+    /// changed assets, rewrite staging files, optionally prune orphans, and
+    /// persist the updated linkage.
     pub fn run(self: *Processor) !void {
         try self.loadLinkage();
 
@@ -165,40 +196,51 @@ pub const Processor = struct {
         var referenced = zstd.StringHashMap(void).init(self.allocator);
         defer referenced.deinit();
 
+        var unique = zstd.StringHashMap(UniqueAsset).init(self.allocator);
+        defer unique.deinit();
+
+        var docs: zstd.ArrayList(ScannedDoc) = .empty;
+        defer docs.deinit(self.allocator);
+
         for (dir.files) |file| {
             const rel = relativePath(dir.root_path, file.path) orelse continue;
             if (!matchesAny(file.path, &doc_extensions)) continue;
             if (isHidden(rel)) continue;
-            try self.processFile(cwd, asset_base, file.path, rel, &referenced);
+            try self.scanFile(cwd, asset_base, file.path, rel, &unique, &referenced, &docs);
         }
+
+        try self.uploadUnique(&unique);
+        try self.rewriteDocs(docs.items);
+        try self.deleteMarked(&unique);
 
         if (self.config.prune_orphans) try self.pruneOrphans(&referenced);
 
         try self.writeLinkage();
     }
 
-    fn processFile(
+    fn scanFile(
         self: *Processor,
         cwd: []const u8,
         asset_base: []const u8,
         abs_md: []const u8,
         rel_md: []const u8,
+        unique: *zstd.StringHashMap(UniqueAsset),
         referenced: *zstd.StringHashMap(void),
+        docs: *zstd.ArrayList(ScannedDoc),
     ) !void {
+        const strings = self.arena.allocator();
         const content = try fs.cwd().readFileAlloc(self.allocator, abs_md, max_document_bytes);
         defer self.allocator.free(content);
+        const content_owned = try strings.dupe(u8, content);
 
         var scan_arena = zstd.heap.ArenaAllocator.init(self.allocator);
         defer scan_arena.deinit();
-        const refs = try scanRefs(scan_arena.allocator(), content);
+        const refs = try scanRefs(scan_arena.allocator(), content_owned);
 
         const md_dir = fs.path.dirname(abs_md) orelse cwd;
         const source_md_dir = sourceMarkdownDir(scan_arena.allocator(), asset_base, rel_md);
 
-        var out: zstd.ArrayList(u8) = .empty;
-        defer out.deinit(self.allocator);
-        var cursor: usize = 0;
-
+        var rewrite_refs: zstd.ArrayList(RewriteRef) = .empty;
         for (refs) |ref| {
             if (!isLocal(ref.url)) continue;
             if (!self.matchesExtension(ref.url)) continue;
@@ -212,112 +254,176 @@ pub const Processor = struct {
                 ref.url,
             ) catch continue;
 
-            const key = try assetKey(self.arena.allocator(), cwd, asset_base, abs_asset);
+            const key = try assetKey(strings, cwd, asset_base, abs_asset);
 
-            const bytes = fs.cwd().readFileAlloc(self.allocator, abs_asset, max_asset_bytes) catch |err| switch (err) {
-                error.FileNotFound => {
-                    zstd.log.warn("media reference not found on disk: {s}", .{abs_asset});
-                    continue;
-                },
-                else => return err,
-            };
-            defer self.allocator.free(bytes);
-
-            const hex = try sha256Hex(self.arena.allocator(), bytes);
-            const new_url = try self.decideAndUpload(key, fs.path.basename(abs_asset), bytes, hex, ref.tag);
-
-            try referenced.put(key, {});
-
-            if (ref.tag == .delete and self.config.allow_delete) {
-                fs.cwd().deleteFile(abs_asset) catch |err| switch (err) {
-                    error.FileNotFound => {},
+            if (unique.getPtr(key)) |existing| {
+                existing.tag = mergeTag(existing.tag, ref.tag);
+                if (ref.tag == .update) existing.needs_upload = true;
+                if (ref.tag == .delete and self.config.allow_delete) existing.should_delete = true;
+            } else {
+                const bytes = fs.cwd().readFileAlloc(self.allocator, abs_asset, max_asset_bytes) catch |err| switch (err) {
+                    error.FileNotFound => {
+                        zstd.log.warn("media reference not found on disk: {s}", .{abs_asset});
+                        continue;
+                    },
                     else => return err,
                 };
+                defer self.allocator.free(bytes);
+
+                const hex = try sha256Hex(strings, bytes);
+                const decided = try self.decide(key, hex, ref.tag);
+                try unique.put(key, .{
+                    .key = key,
+                    .abs_path = try strings.dupe(u8, abs_asset),
+                    .hex = hex,
+                    .public_id = decided.public_id,
+                    .tag = ref.tag,
+                    .needs_upload = decided.needs_upload,
+                    .should_delete = ref.tag == .delete and self.config.allow_delete,
+                });
             }
 
-            try out.appendSlice(self.allocator, content[cursor..ref.start]);
-            try out.appendSlice(self.allocator, ref.before);
-            try out.appendSlice(self.allocator, new_url);
-            try out.appendSlice(self.allocator, ref.after);
-            cursor = ref.end;
+            try referenced.put(key, {});
+            try rewrite_refs.append(strings, .{
+                .start = ref.start,
+                .end = ref.end,
+                .key = key,
+                .before = try strings.dupe(u8, ref.before),
+                .after = try strings.dupe(u8, ref.after),
+            });
         }
-        try out.appendSlice(self.allocator, content[cursor..]);
 
-        try self.writeStaged(rel_md, out.items);
+        try docs.append(self.allocator, .{
+            .rel_md = try strings.dupe(u8, rel_md),
+            .content = content_owned,
+            .refs = try rewrite_refs.toOwnedSlice(strings),
+        });
     }
 
-    /// Decide how a referenced asset is handled relative to the prior linkage
-    /// and return the delivery URL to substitute into the document.
-    fn decideAndUpload(
-        self: *Processor,
-        key: []const u8,
-        filename: []const u8,
-        bytes: []const u8,
-        hex: []const u8,
-        tag: Lifecycle,
-    ) ![]const u8 {
-        const strings = self.arena.allocator();
-
+    fn decide(self: *Processor, key: []const u8, hex: []const u8, tag: Lifecycle) !struct {
+        needs_upload: bool,
+        public_id: []const u8,
+    } {
         if (self.index.get(key)) |idx| {
             const entry = &self.assets.items[idx];
             const changed = !zstd.mem.eql(u8, entry.sha256, hex);
-            if (!changed and tag != .update) return entry.url;
-
-            var res = try self.cloud.uploadBytes(bytes, filename, .{
-                .resource_type = self.config.resource_type,
+            return .{
+                .needs_upload = changed or tag == .update,
                 .public_id = entry.public_id,
+            };
+        }
+        return .{
+            .needs_upload = true,
+            .public_id = try self.derivePublicId(self.arena.allocator(), key),
+        };
+    }
+
+    fn uploadUnique(self: *Processor, unique: *zstd.StringHashMap(UniqueAsset)) !void {
+        var jobs: zstd.ArrayList(upload_pool.Job) = .empty;
+        defer jobs.deinit(self.allocator);
+        var upload_keys: zstd.ArrayList([]const u8) = .empty;
+        defer upload_keys.deinit(self.allocator);
+
+        var it = unique.iterator();
+        while (it.next()) |entry| {
+            if (!entry.value_ptr.needs_upload) continue;
+            try jobs.append(self.allocator, .{
+                .id = jobs.items.len,
+                .path = entry.value_ptr.abs_path,
+                .public_id = entry.value_ptr.public_id,
+                .resource_type = self.config.resource_type,
+                .tags = @tagName(entry.value_ptr.tag),
                 .overwrite = true,
                 .invalidate = true,
-                .tags = @tagName(tag),
+                .label = entry.value_ptr.key,
             });
-            defer res.deinit();
-
-            entry.url = try self.deliveryUrl(strings, res.value, entry.public_id);
-            entry.sha256 = try strings.dupe(u8, hex);
-            entry.bytes = res.value.bytes;
-            entry.version = res.value.version;
-            entry.tag = @tagName(tag);
-            entry.uploaded_at = unixTimestamp();
-            return entry.url;
+            try upload_keys.append(self.allocator, entry.key_ptr.*);
         }
 
-        const public_id = try self.derivePublicId(strings, key);
-        var res = try self.cloud.uploadBytes(bytes, filename, .{
-            .resource_type = self.config.resource_type,
-            .public_id = public_id,
-            .overwrite = true,
-            .invalidate = true,
-            .tags = @tagName(tag),
-        });
-        defer res.deinit();
+        if (jobs.items.len == 0) return;
+
+        var outcome = try upload_pool.run(self.allocator, self.cloud.client.io, self.cloud, jobs.items);
+        defer outcome.deinit();
+
+        for (outcome.results) |result| {
+            if (!result.ok) continue;
+            const key = upload_keys.items[result.id];
+            const asset = unique.get(key).?;
+            try self.applyUpload(key, asset.hex, asset.tag, result);
+        }
+    }
+
+    fn applyUpload(
+        self: *Processor,
+        key: []const u8,
+        hex: []const u8,
+        tag: Lifecycle,
+        result: upload_pool.Result,
+    ) !void {
+        const strings = self.arena.allocator();
+        const url = try strings.dupe(u8, result.url);
+        if (self.index.get(key)) |idx| {
+            const entry = &self.assets.items[idx];
+            entry.url = url;
+            entry.sha256 = hex;
+            entry.bytes = result.bytes;
+            entry.version = result.version;
+            entry.tag = @tagName(tag);
+            entry.uploaded_at = unixTimestamp();
+            return;
+        }
+
+        const public_id = if (result.public_id.len != 0)
+            try strings.dupe(u8, result.public_id)
+        else
+            try strings.dupe(u8, key);
 
         const entry = AssetEntry{
-            .source_path = try strings.dupe(u8, key),
+            .source_path = key,
             .public_id = public_id,
             .resource_type = @tagName(self.config.resource_type),
-            .url = try self.deliveryUrl(strings, res.value, public_id),
-            .sha256 = try strings.dupe(u8, hex),
-            .bytes = res.value.bytes,
-            .version = res.value.version,
+            .url = url,
+            .sha256 = hex,
+            .bytes = result.bytes,
+            .version = result.version,
             .tag = @tagName(tag),
             .uploaded_at = unixTimestamp(),
         };
         try self.assets.append(self.allocator, entry);
         try self.index.put(entry.source_path, self.assets.items.len - 1);
-        return entry.url;
     }
 
-    /// Prefer the signed secure URL returned by Cloudinary; fall back to the
-    /// plain URL, then to a synthesized delivery URL.
-    fn deliveryUrl(
-        self: *Processor,
-        strings: zstd.mem.Allocator,
-        res: cloudinary.Resource,
-        public_id: []const u8,
-    ) ![]const u8 {
-        if (res.secure_url.len > 0) return strings.dupe(u8, res.secure_url);
-        if (res.url.len > 0) return strings.dupe(u8, res.url);
-        return self.cloud.deliveryUrl(strings, public_id, self.config.resource_type, .upload);
+    fn rewriteDocs(self: *Processor, docs: []const ScannedDoc) !void {
+        for (docs) |doc| {
+            var out: zstd.ArrayList(u8) = .empty;
+            defer out.deinit(self.allocator);
+            var cursor: usize = 0;
+            for (doc.refs) |ref| {
+                try out.appendSlice(self.allocator, doc.content[cursor..ref.start]);
+                if (self.index.get(ref.key)) |idx| {
+                    try out.appendSlice(self.allocator, ref.before);
+                    try out.appendSlice(self.allocator, self.assets.items[idx].url);
+                    try out.appendSlice(self.allocator, ref.after);
+                } else {
+                    try out.appendSlice(self.allocator, doc.content[ref.start..ref.end]);
+                }
+                cursor = ref.end;
+            }
+            try out.appendSlice(self.allocator, doc.content[cursor..]);
+            try self.writeStaged(doc.rel_md, out.items);
+        }
+    }
+
+    fn deleteMarked(self: *Processor, unique: *zstd.StringHashMap(UniqueAsset)) !void {
+        if (!self.config.allow_delete) return;
+        var it = unique.iterator();
+        while (it.next()) |entry| {
+            if (!entry.value_ptr.should_delete) continue;
+            fs.cwd().deleteFile(entry.value_ptr.abs_path) catch |err| switch (err) {
+                error.FileNotFound => {},
+                else => return err,
+            };
+        }
     }
 
     fn derivePublicId(self: *Processor, strings: zstd.mem.Allocator, key: []const u8) ![]const u8 {
