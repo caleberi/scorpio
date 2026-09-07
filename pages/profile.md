@@ -14,7 +14,7 @@ Glad you could check out this profile. I'm a backend engineer with 5+ years in f
 
 Outside of work I split time between a quiet, music-filled workspace — guitar, singing, some writing — and personal systems programming: I've built a Go implementation of GFS, a distributed task queue, a B+ tree storage engine with copy-on-write semantics, and I'm currently working through Zig for a personal blog platform.
 
-![image](../blobs/profile.jpeg)
+![image](../blobs/profile.png)
 
 ### How I work
 
