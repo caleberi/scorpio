@@ -50,6 +50,7 @@ RUN zig fetch "https://github.com/ziglang/translate-c/archive/57c559cf581b1fcad9
 COPY src ./src
 COPY libraries ./libraries
 COPY common ./common
+COPY primitives ./primitives
 
 # Portable CPU: native features from the build host SIGILL on Render (exit 132).
 RUN zig build -Doptimize=ReleaseSafe -Dcpu=baseline
