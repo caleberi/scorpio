@@ -8,7 +8,7 @@ topics:
   - 'Engineering'
   - 'Profile'
 type: 'Blog'
-image: '[cover image](../blobs/cover18.webp)'
+image: '![image](../blobs/cover18.webp)'
 ---
 
 Glad you could check out this profile. I'm a backend engineer with 5+ years in fintech, working mostly in Node.js (Sails.js) and Go, with MongoDB and Redis underneath. Day to day that means wallet ledger architecture, transaction processing pipelines, idempotency patterns, and balance reconciliation — the parts of a system where a bug isn't a bad UX, it's a wrong balance.
