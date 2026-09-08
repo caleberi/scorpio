@@ -1,13 +1,14 @@
 ---
-title: "Proverb 31"
+title: "A Virtuous Woman"
+summary: "Proverb 31 is a chapter in the Book of Proverbs that teaches about the importance of wisdom and the role of a good wife."
 authors:
-  - 'Caleb Adewole Erioluwa'
+  - 'Adewole Caleb'
 date: 2026-09-08
-tags: 
+topics: 
  - "Bible Study"
  - "Proverbs"
  - "Wisdom"
-description: "Proverb 31 is a chapter in the Book of Proverbs that teaches about the importance of wisdom and the role of a good wife."
+type: 'Blog'
 image: '![Proverb 31](../../../blobs/cover31.jpg)'
 ---
 
