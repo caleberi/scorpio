@@ -8,13 +8,14 @@ topics:
   - 'Engineering'
   - 'Profile'
 type: 'Blog'
+image: '![profile](../blobs/profile.png)'
 ---
 
 Glad you could check out this profile. I'm a backend engineer with 5+ years in fintech, working mostly in Node.js (Sails.js) and Go, with MongoDB and Redis underneath. Day to day that means wallet ledger architecture, transaction processing pipelines, idempotency patterns, and balance reconciliation — the parts of a system where a bug isn't a bad UX, it's a wrong balance.
 
 Outside of work I split time between a quiet, music-filled workspace — guitar, singing, some writing — and personal systems programming: I've built a Go implementation of GFS, a distributed task queue, a B+ tree storage engine with copy-on-write semantics, and I'm currently working through Zig for a personal blog platform.
 
-![image](../blobs/profile.png)
+
 
 ### How I work
 
