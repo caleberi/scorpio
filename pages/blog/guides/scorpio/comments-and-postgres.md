@@ -1,5 +1,5 @@
 ---
-title: 'Scorpio #4 — Comments and Postgres'
+title: 'Comments and Postgres'
 summary: 'Prerun upserts slug and path. Comments and replies live in Postgres. The article body never does.'
 authors:
   - 'Adewole Caleb'

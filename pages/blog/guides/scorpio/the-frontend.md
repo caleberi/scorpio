@@ -1,5 +1,5 @@
 ---
-title: 'Scorpio #5 — The React UI'
+title: 'The React UI'
 summary: 'TanStack routes, cards that parse frontmatter, mermaid in the body, and a floating console that can open a slug'
 authors:
   - 'Adewole Caleb'

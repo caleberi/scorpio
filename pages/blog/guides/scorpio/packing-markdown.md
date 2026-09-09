@@ -1,5 +1,5 @@
 ---
-title: 'Scorpio #1 — Packing markdown'
+title: 'Packing markdown'
 summary: 'How zig build pack rewrites local images and videos, stages markdown, then hands the tree to the packer'
 authors:
   - 'Adewole Caleb'

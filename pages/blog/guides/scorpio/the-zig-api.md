@@ -1,5 +1,5 @@
 ---
-title: 'Scorpio #3 — The Zig API'
+title: 'The Zig API'
 summary: 'Zap on :9090, splat routes, a two-level cache, and Cloudinary only when the local chunk file is missing'
 authors:
   - 'Adewole Caleb'

@@ -1,5 +1,5 @@
 ---
-title: 'Scorpio #2 — The manifest and the chunks'
+title: 'The manifest and the chunks'
 summary: '4 MiB chunk_0000.dat files, a JSON catalogue, and how Scorpio decides to reuse a post instead of rewriting it'
 authors:
   - 'Adewole Caleb'
