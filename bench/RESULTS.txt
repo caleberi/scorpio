@@ -1,0 +1,26 @@
+Env parse benchmark (Zig 0.15.2)
+iterations/case = 50000, optimize=ReleaseFast
+
+        impl |                   config |       ns/op |      allocs/op |         B/op | iters
+----------------------------------------------------------------------------------------------------
+        gist |                     flat |    64863 ns/op |     13.0 allocs/op |      113.0 B/op | 50000 iters
+   fieldplan |                     flat |    65384 ns/op |     13.0 allocs/op |      113.0 B/op | 50000 iters
+             speedup FieldPlan vs gist: 0.99x time, alloc ratio gist/fieldplan=1.00
+
+        gist |                   nested |   110024 ns/op |     35.0 allocs/op |     1014.0 B/op | 50000 iters
+   fieldplan |                   nested |    62046 ns/op |     23.0 allocs/op |      282.0 B/op | 50000 iters
+             speedup FieldPlan vs gist: 1.77x time, alloc ratio gist/fieldplan=1.52
+
+        gist |              deep-nested |   142791 ns/op |     44.0 allocs/op |     1512.0 B/op | 50000 iters
+   fieldplan |              deep-nested |   100860 ns/op |     24.0 allocs/op |      322.0 B/op | 50000 iters
+             speedup FieldPlan vs gist: 1.42x time, alloc ratio gist/fieldplan=1.83
+
+        gist |                wide-flat |   207830 ns/op |     51.0 allocs/op |      297.0 B/op | 50000 iters
+   fieldplan |                wide-flat |   228435 ns/op |     51.0 allocs/op |      297.0 B/op | 50000 iters
+             speedup FieldPlan vs gist: 0.91x time, alloc ratio gist/fieldplan=1.00
+
+        gist |              flat+prefix |   135488 ns/op |     23.0 allocs/op |      878.0 B/op | 50000 iters
+   fieldplan |              flat+prefix |   140139 ns/op |     23.0 allocs/op |      878.0 B/op | 50000 iters
+             speedup FieldPlan vs gist: 0.97x time, alloc ratio gist/fieldplan=1.00
+
+Done.
