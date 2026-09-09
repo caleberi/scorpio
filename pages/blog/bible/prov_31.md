@@ -9,7 +9,7 @@ topics:
  - "Proverbs"
  - "Wisdom"
 type: 'Blog'
-image: '![Proverb 31](../../../blobs/cover31.jpg)'
+image: '![Proverb 31](../../../blobs/cover48.jpg)'
 ---
 
 > A note to myself — to think more clearly about what a good wife should be.
