@@ -21,7 +21,11 @@ pub const WaitGroup = struct {
         return .{ .io = io };
     }
 
-    pub fn zig(self: *WaitGroup, comptime func: anytype, args: anytype) Io.ConcurrentError!void {
+    pub fn zig(
+        self: *WaitGroup,
+        comptime func: anytype,
+        args: anytype,
+    ) Io.ConcurrentError!void {
         try self.group.concurrent(self.io, func, args);
     }
 
