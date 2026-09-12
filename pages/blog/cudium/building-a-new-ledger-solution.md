@@ -1,6 +1,7 @@
 ---
 title: 'Building a New Ledger Solution: Transaction as an Event'
-author: 'Adewole Caleb'
+authors: 
+  - 'Adewole Caleb'
 date: 2026-09-12
 tags:
   - 'Engineering'
@@ -12,7 +13,7 @@ tags:
   - 'Accounting'
   - 'Double-Entry Bookkeeping'
 type: 'Blog'
-image: '![images](../../../blobs/cover24.webp)
+image: '![images](../../../blobs/cover24.webp)'
 highlight: green
 ---
 
