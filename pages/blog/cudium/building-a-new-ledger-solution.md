@@ -64,3 +64,82 @@ Transactions must be isolated from each other, meaning one transaction's process
 At the end of the day, we need to be able to ensure the transaction is correct and the data is accurate and consistent. This is how we build a trustworthy system.
 
 ![Transaction as an event](../../../blobs/trigger-processor.png)
+
+In the diagram above, we have a trigger that is responsible for detecting a transaction and sending it to the processor. The processor is responsible for processing the transaction and updating the ledger. The ledger is responsible for storing the transaction and the resulting state of the ledger. Let's go into more details about how this works.
+
+An event comes in, typically tracked using configured matching rules on document creation or updates. This event in this case is a transaction information. Most people think of transaction as binding within an application but in this case, it is binding withing the confines of the database. 
+
+Let's say we have a transaction event with the following information: 
+
+```json
+{
+    "operation": "insert",
+    "ns_collection": {
+        "ns": "transactions",
+    }
+    "fulldocument": {
+        "_id": "mock-transaction-id",
+        "amount": 100,
+        "currency": "USD",
+        "description": "Payment for services",
+        "status": "pending",
+        "sender":"mock-sender-id",
+        "receiver":"mock-receiver-id",
+        "provider": "mock-provider-id",
+        "processed": false,
+        "reason": "Payment for services",
+        "status": "pending",
+        "createdAt": "2026-09-12T10:00:00Z",
+        "updatedAt": "2026-09-12T10:00:00Z"
+    }
+}
+```
+
+Since this event type is `insert`, the trigger will run. From this incoming event, we will do some early data extraction and validation checks to ensure the transaction is valid and the data is accurate and consistent.
+
+```js
+exports = async function(changeEvent) {
+    const operation = changeEvent.operationType.toUpperCase();
+    if (!_.has(OperationType, operation)) {
+        return;
+    }
+    const appSettings = context.environment.values;
+    const clusterName = appSettings.CLUSTER_NAME;
+    const databaseName = appSettings.DATABASE_NAME;
+    const treasuryBusinessId = appSettings.TREASURY_BUSINESS_ID;
+    if (!hasTreasuryConfigured(appSettings)) {
+        throw new Error(`
+            TREASURY_BUSINESS_ID is required —\n
+            set a real treasury business ObjectId in App Services\n
+            values/environments before deploying (empty value fail-closes all wallet processing)\n
+            TREASURY_BUSINESS_ID: ${treasuryBusinessId}`
+        );
+    }
+
+
+    const mongoClient = context.services.get(clusterName);
+    const db = mongoClient.db(databaseName);
+    const {
+        typeOfTransaction: transactionType,
+        business: originatingBusinessRaw,
+        settlementBusiness: settlementBusinessRaw,
+        amount: amountRaw,
+        fee: feeRaw,
+        processingFee: processingFeeRaw,
+        processedBy: providerRaw,
+        currency,
+        beneficiaryBusiness: beneficiaryBusinessRaw,
+        parentTransactionId: parentTransactionRaw,
+        _id: transactionRaw,
+    } = changeEvent.fullDocument;
+    const walletOwnerId = settlementBusinessRaw
+        ? toObjectId(settlementBusinessRaw)
+        : toObjectId(originatingBusinessRaw);
+    const transactionId = toObjectId(transactionRaw);
+    const beneficiaryBusinessId = beneficiaryBusinessRaw
+        ? toObjectId(beneficiaryBusinessRaw)
+        : null;
+    const logger = createLogger("WalletTxn", transactionId);
+}
+
+```
