@@ -195,7 +195,11 @@ const processor = TransactionProcessor({
 
 Given the asset (value) in this case has to move from an account to another account and vice-versa. We need to ensure that account all our account for financial calculations are in place so we can track movement from external and internal accounts in the system, that way we will know how much we are making or losing. A factory function can help us do before the actual transaction starts. One thing to ensure is that, for any resource that we will be interacting with, we need to lay down indexes such that we can't have TOCTOU issue i.e we don't have a situation where one trigger is checking while another one has updated the transaction. In this case, I hit a blocker because the mongodb trigger does not support index creation so therefore, I moved the plan to CI stage ensuring that all necessary indexes are in-place before triggers run. 
 
-Anyway, AccountRegistryFactory is just that component to help ensure sanity for all needed control account for us. Here is just a simple example of how it looks, loading or creating account if it does not existing before.
+## AccountRegistryFactory
+
+> A factory function to help ensure sanity for all needed control account for us.
+
+AccountRegistryFactory is just that component to help ensure sanity for all needed control account for us. Here is just a simple example of how it looks, loading or creating account if it does not existing before.
 
 ```js
 function AccountRegistryFactory(db, treasuryBusinessId, logger) {
@@ -235,3 +239,82 @@ function AccountRegistryFactory(db, treasuryBusinessId, logger) {
 ```
 
 > You will notice the use of closure in this article right ? Yes, triggers do not support the import of external modules, so we need to use closure to create a private scope for the function.
+
+
+## FundChecker
+
+> A component to help ensure that the transaction has enough assets to cover the movement of assets from one account to another.
+
+Ususally, before any transaction can proceed , we need to ensure that account involved in the transaction has enough assets to cover the movement of assets from one account to another. FundChecker is just that component to help ensure that the transaction has enough assets to cover the movement of assets from one account to another. Here is just a simple example of how it looks, checking if the account has enough assets to cover the movement of assets from one account to another.
+
+We do this by creating a checkpoint on account  to help use calculate the sum of amount that has beeb transacted from and to the account. This way we ensure correctness for the new transaction from the ledger perspective. A typical checkpoint account balance calculating function can look like this:
+
+```js
+async function sumClearingEffects(db, account, session, { checkpointId = null, fullScan = false } = {}) {
+    const ledgers = db.collection(databaseCollections.LEDGER);
+
+    // ledger docs where this account is the debit *or* credit side
+    // (same currency, business, role). If we have a checkpoint and are
+    // not doing a full scan, only read entries after that _id.
+    const docs = await ledgers.find(/* filter */, { projection: { transfers: 1 }, session }).toArray();
+
+    let effects = 0;
+    for (const doc of docs) {
+        for (const transfer of doc.transfers || []) {
+            const units = transfer.amountUnits ?? toMinorUnits(transfer.amount);
+            // +credit / −debit (or the reverse) depending on account nature
+            effects += transferEndpointEffect(account, transfer.debit, AccountingPostingSide.DEBIT, units);
+            effects += transferEndpointEffect(account, transfer.credit, AccountingPostingSide.CREDIT, units);
+        }
+    }
+    return effects;
+}
+
+function transferEndpointEffect(account, endpoint, side, units) {
+    // skip unless this debit/credit leg is the same business, currency, and role
+    if (!endpoint) return 0;
+
+    // EXTERNAL (asset): debit +, credit −
+    // liability / others: debit −, credit +
+    const debitUp = debitIncreasesBalance(account.nature || natureOf(account.role));
+    if (side === AccountingPostingSide.DEBIT) return debitUp ? units : -units;
+    return debitUp ? -units : units;
+}
+
+function debitIncreasesBalance(nature) {
+    return nature === AccountNature[WalletRole.EXTERNAL];
+}
+
+```
+
+The sign flip is the whole point of `transferEndpointEffect`. Every transfer is two-sided — a debit and a credit — but those sides are not "minus" and "plus" on every account. EXTERNAL wallets are assets (money we hold, or that sits with a provider), so a debit increases the balance and a credit decreases it. Customer wallets and the other control accounts are liabilities: a credit increases what we owe them, a debit decreases it. Skip that nature check and summing clearing effects treats a customer payout the same as a treasury inflow, and FundChecker would pass or fail the wrong accounts.
+
+Based on the running idea of this function above, we can now create a FundChecker function that can look like this, such that it calculated the transaction amount currently in progress and also the amount in the wallet to identify the spendable amount and if it will be sufficient to cover the transaction:
+
+```js
+function FundChecker(db, transactionId, logger) {
+    const transactions = db.collection(databaseCollections.TRANSACTION);
+
+    return async function (businessId, amount, currency, session) {
+        // other unprocessed withdrawals / transfers / NGN swaps for this
+        // business, excluding FAILED and this trigger's own txn.
+        // SWAP reserved = amount * rate + fee; otherwise amount + fee.
+        const locked = await sumReservedInFlight(transactions, /* aggregation */);
+
+        const derived = await deriveBalance(db, {
+            businessId,
+            currency,
+            role: WalletRole.CUSTOMER,
+            nature: AccountNature[WalletRole.CUSTOMER],
+        }, session);
+
+        const spendable = derived.derivedBalance - toMinorUnits(locked);
+        const required = toMinorUnits(amount);
+        return {
+            hasSufficientFund: spendable >= required,
+            availableBalance: fromMinorUnits(derived.derivedBalance),
+            derived,
+        };
+    };
+}
+```
