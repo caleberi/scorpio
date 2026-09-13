@@ -62,3 +62,5 @@ Transactions must be isolated from each other, meaning one transaction's process
 - **Correctness**
 
 At the end of the day, we need to be able to ensure the transaction is correct and the data is accurate and consistent. This is how we build a trustworthy system.
+
+![Transaction as an event](../../../blobs/trigger-processor.png)
