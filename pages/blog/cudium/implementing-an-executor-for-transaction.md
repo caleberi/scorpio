@@ -138,3 +138,30 @@ Since we are apply sides via double-entry book keeping rules, we need to create 
 
 
 ![images](../../../blobs/transfer-chain.png)
+
+In the image above, you will notice that we need a couple of transfer legs to move money between accounts. Therefore, we will create an array to represent booking balance representation of a financial transaction.
+
+```js
+function transfer(debit, credit, amount, currency, code, label) {
+    const amountUnits = toMinorUnits(amount);
+    if (!(amountUnits > 0)) throw new Error("non-positive transfer");
+    // one debit account, one credit account, same amount — a single chain link
+    return { debit, credit, amountUnits, currency, code, label };
+}
+```
+
+We can flip the collection of the legs to represent the reverse of the transaction.
+
+```js
+function invertChain(transfers, reversalCode) {
+    // walk the chain backwards; swap debit and credit on each link
+    return transfers.slice().reverse().map((t) => ({
+        debit: t.credit,
+        credit: t.debit,
+        amountUnits: t.amountUnits ?? toMinorUnits(t.amount),
+        currency: t.currency,
+        code: reversalCode,
+        label: t.label ? `rev_${t.label}` : "reversal",
+    }));
+}
+```
