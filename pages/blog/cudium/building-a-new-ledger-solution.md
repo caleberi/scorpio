@@ -144,7 +144,7 @@ exports = async function(changeEvent) {
 
 ```
 
-Idempotency checks is very important when working with transactions since we want to avoid processing the same transaction multiple times. This is why we need to check if the transaction has already been processed before. Therefore, we can figure out if the transaction has already been processed by checking the `processed` field in the transaction document. If it is `true`, we know the transaction has already been processed and we can skip it.
+Idempotency checks is very important when working with transactions since we want to avoid processing the same transaction multiple times. Hence, why we need to check if the transaction has already been processed before. We can do this by figuring out if the transaction has already been processed by checking the `processed` field in the transaction document. If it is `true`, we know the transaction has already been processed and we can skip it.
 
 ```js
 const transaction = appDb.collection(databaseCollections.TRANSACTION);
@@ -159,3 +159,79 @@ if (!curTransaction) {
 }
 
 ```
+
+Thinking about it now, the previous transaction  processor violates some basic finanical rules like, "for every credit, there must be a corresponding debit". Instead, I only created a one-leg transfer flow for debit and credit and for transfer two legs transfer flow. Looking back now, I know better.
+
+Let's see what a transaction processor should look like, then we can tear it apart:
+
+```js
+const accounts = AccountRegistryFactory(appDb, TREASURY_BUSINESS_ID, log);
+const fundCheck = FundChecker(appDb, transactionId, log);
+const {executeLinked} = ExecutorFactory(appDb, {
+    log,
+    fundCheck
+});
+const processor = TransactionProcessor({
+    appDb,
+    client,
+    log,
+    accounts,
+    executeLinked,
+    changeEvent,
+    curTransaction,
+    transactionId,
+    typeOfTransaction,
+    businessId,
+    beneficiaryBusinessId,
+    parentTransactionIdStr,
+    currency,
+    amount,
+    fee,
+    processingFee,
+    isReversibleTrx,
+    providerIdentity
+}); 
+```
+
+Given the asset (value) in this case has to move from an account to another account and vice-versa. We need to ensure that account all our account for financial calculations are in place so we can track movement from external and internal accounts in the system, that way we will know how much we are making or losing. A factory function can help us do before the actual transaction starts. One thing to ensure is that, for any resource that we will be interacting with, we need to lay down indexes such that we can't have TOCTOU issue i.e we don't have a situation where one trigger is checking while another one has updated the transaction. In this case, I hit a blocker because the mongodb trigger does not support index creation so therefore, I moved the plan to CI stage ensuring that all necessary indexes are in-place before triggers run. 
+
+Anyway, AccountRegistryFactory is just that component to help ensure sanity for all needed control account for us. Here is just a simple example of how it looks, loading or creating account if it does not existing before.
+
+```js
+function AccountRegistryFactory(db, treasuryBusinessId, logger) {
+    const wallets = db.collection(databaseCollections.WALLET);
+    const cache = {};
+    const treasuryId = toObjectId(treasuryBusinessId);
+
+    async function ensureControlWallet(currency, role) {
+        const key = `${treasuryId}:${currency}:${role}`;
+        if (cache[key]) return cache[key];
+
+        // find the treasury wallet, or insert a zero-balance one.
+        // duplicate-key means another trigger won the race — re-read.
+        const ref = { businessId: treasuryId, currency, role, nature: natureOf(role) };
+        cache[key] = ref;
+        return ref;
+    }
+
+    return {
+        treasuryId,
+        async control(currency) {
+            // one set per currency: EXTERNAL, MAIN, TRANSACTION_FEE, PROCESSING_FEE
+            const [external, main, fee, processingFee] = await Promise.all([
+                ensureControlWallet(currency, WalletRole.EXTERNAL),
+                ensureControlWallet(currency, WalletRole.MAIN),
+                ensureControlWallet(currency, WalletRole.TRANSACTION_FEE),
+                ensureControlWallet(currency, WalletRole.PROCESSING_FEE),
+            ]);
+            return { EXTERNAL: external, MAIN: main, TRANSACTION_FEE: fee, PROCESSING_FEE: processingFee };
+        },
+        customer(businessId, currency) {
+            // treasury cannot be a customer party — control and liability stay distinct
+            return { businessId, currency, role: WalletRole.CUSTOMER, nature: AccountNature[WalletRole.CUSTOMER] };
+        },
+    };
+}
+```
+
+> You will notice the use of closure in this article right ? Yes, triggers do not support the import of external modules, so we need to use closure to create a private scope for the function.
