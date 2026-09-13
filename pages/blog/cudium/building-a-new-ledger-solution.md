@@ -143,3 +143,19 @@ exports = async function(changeEvent) {
 }
 
 ```
+
+Idempotency checks is very important when working with transactions since we want to avoid processing the same transaction multiple times. This is why we need to check if the transaction has already been processed before. Therefore, we can figure out if the transaction has already been processed by checking the `processed` field in the transaction document. If it is `true`, we know the transaction has already been processed and we can skip it.
+
+```js
+const transaction = appDb.collection(databaseCollections.TRANSACTION);
+const [transactionExist, curTransaction] = await Promise.all([ 
+    transaction.count({ _id: transactionId, processed: false }), 
+    transaction.findOne({ _id: transactionId, processed: false })
+]).catch(err => { throw err; });
+
+if (!curTransaction) {
+    log.warn("No unprocessed transaction found — exiting");
+    return null;
+}
+
+```
