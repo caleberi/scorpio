@@ -88,3 +88,53 @@ function WalletPorterFactory(db, { logger, fundCheck }) {
     return { applySide };
 }
 ```
+With the applySide function, we can add apply function for each posting type to calculate the balance of the account in question. Another function that we need is the reconcilation function which basicall calculate the balance of an account from stored ledger entries such that we can detect if there is any discrepancy in the balance of the account. Providing us with healing logic and also account synchronization logic, we can guarantee that the balance of the account is correct and up to date via recalculation of ledger entries on an account. As shown below,
+
+```js
+function AuditingReconciler(db, logger) {
+    const wallets = db.collection(databaseCollections.WALLET);
+
+    async function syncBalance(account, { session, expectedProjection, expectedCheckpointId, newBalance, ledgerOpeningBalance, effectsCheckpointId, foldCheckpoint = false }) {
+        // optimistic write: match on current projection/checkpoint so two
+        // triggers cannot clobber each other. matchedCount === 0 is a conflict.
+        const filter = {
+            ...walletFilterForRef(account),
+            ...(expectedProjection != null ? { availableBalance: expectedProjection } : {}),
+            ...(expectedCheckpointId !== undefined ? { effectsCheckpointId: expectedCheckpointId } : {}),
+        };
+        const { matchedCount } = await wallets.updateOne(filter, {
+            $set: {
+                availableBalance: newBalance,
+                ledgerOpeningBalance,
+                balanceSource: "ledger-derived",
+                ...(foldCheckpoint ? { effectsCheckpointId } : {}),
+            },
+        }, { session, upsert: false });
+        if (matchedCount === 0) throw new Error("projection sync conflict");
+    }
+
+    async function healBalance(ledgerDoc, session) {
+        // replay each wallet snapshot from the ledger onto the projection,
+        // then fold the checkpoint forward so we do not rescan this entry.
+        for (const snap of Object.values(ledgerDoc.balancesByWallet || {})) {
+            const account = { businessId: snap.businessId, currency: snap.currency, role: snap.role };
+            const wallet = await wallets.findOne(walletFilterForRef(account), { session });
+            if (!wallet) continue;
+            await syncBalance(account, {
+                session,
+                newBalance: snap.balanceAfter,
+                ledgerOpeningBalance: toMinorUnits(snap.balanceAfter),
+                effectsCheckpointId: maxLedgerId(wallet.effectsCheckpointId, ledgerDoc._id),
+                foldCheckpoint: true,
+            }).catch((err) => logger?.warn("projection heal skipped", err.message));
+        }
+    }
+
+    return { syncBalance, healBalance };
+}
+```
+
+Since we are apply sides via double-entry book keeping rules, we need to create a way to illustrate how posting works along side function above to have a better understanding of this. This idea was gotten from tigerbettle's approach of creating debit and credit legs for transaction in form of a chain.
+
+
+![images](../../../blobs/transfer-chain.png)
