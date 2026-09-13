@@ -318,3 +318,8 @@ function FundChecker(db, transactionId, logger) {
     };
 }
 ```
+
+Accounts and fund checks get us to the door. The write itself is a different problem: posting linked debit and credit legs without leaving the books half-done. That is `ExecutorFactory` and `TransactionProcessor`, and it is enough for its own post.
+
+Next: [the executor and the transaction processor](/posts/blog/cudium/implementing-an-executor-for-transaction).
+
