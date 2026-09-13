@@ -13,7 +13,7 @@ tags:
   - 'Accounting'
   - 'Double-Entry Bookkeeping'
 type: 'Blog'
-image: '![images](../../../blobs/cover24.webp)'
+image: '![images](../../../blobs/cover27.webp)'
 highlight: green
 ---
 
