@@ -1,5 +1,5 @@
 ---
-title: 'Building a New Ledger Solution: Transaction as an Event'
+title: 'Building A New Ledger Solution: Transaction as an Event'
 authors: 
   - 'Adewole Caleb'
 date: 2026-09-12

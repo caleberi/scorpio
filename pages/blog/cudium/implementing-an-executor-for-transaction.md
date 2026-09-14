@@ -1,5 +1,5 @@
 ---
-title: 'Building a New Ledger Solution: Executor and Transaction Processor'
+title: 'Building A New Ledger Solution: Executor and Transaction Processor'
 summary: 'How ExecutorFactory posts linked double-entry transfers atomically, and how TransactionProcessor routes each transaction type through that path.'
 authors:
   - 'Adewole Caleb'
