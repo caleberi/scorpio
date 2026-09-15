@@ -4,6 +4,7 @@ const config_mod = @import("config.zig");
 const Manifest = libraries.processor.documents.manifest.Manifest;
 const DocumentEntry = libraries.processor.documents.manifest.DocumentEntry;
 const Cloudinary = libraries.uploader.cloudinary.Cloudinary;
+const deck_mod = libraries.processor.presentation.deck;
 
 pub const BlogCache = @import("blog/cache.zig").BlogCache;
 pub const BlogDb = @import("blog/db.zig").BlogDb;
@@ -13,6 +14,7 @@ pub const State = struct {
     io: zstd.Io,
     config: *config_mod.AppConfig,
     manifest: Manifest,
+    presentations: deck_mod.LoadedIndex,
     cloud: Cloudinary,
     cache: BlogCache,
     db: BlogDb,

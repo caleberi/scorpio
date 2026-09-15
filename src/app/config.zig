@@ -67,6 +67,20 @@ pub const BlogConfig = struct {
     prefetch_neighbors: i32 = 3,
 };
 
+pub const PresentationConfig = struct {
+    pub const doc: []const u8 =
+        \\// @validation
+        \\// @property: pack_dir
+        \\//   @validator: @required,@min_length=1
+        \\//   @messages:
+        \\//     required - "Presentation pack directory is required"
+        \\//     min_length - "Presentation pack directory cannot be empty"
+    ;
+
+    pack_dir: []const u8 = "packed/presentations",
+    extra_dirs: []const u8 = "",
+};
+
 pub const CloudinaryConfig = struct {
     pub const doc: []const u8 =
         \\// @validation
@@ -133,6 +147,7 @@ pub const AppConfig = struct {
     log_level: []const u8 = "info",
     server: *ServerConfig,
     blog: *BlogConfig,
+    presentation: *PresentationConfig,
     cloudinary: *CloudinaryConfig,
     db: *DatabaseConfig,
 };

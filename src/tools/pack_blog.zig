@@ -4,6 +4,8 @@ const config_mod = @import("../app/config.zig");
 const fs = libraries.fs;
 const images = libraries.processor.images;
 const videos = libraries.processor.videos;
+const presentation = libraries.processor.presentation.processor;
+const deck_mod = libraries.processor.presentation.deck;
 
 const Cloudinary = libraries.uploader.cloudinary.Cloudinary;
 const upload_pool = libraries.uploader.pool;
@@ -93,6 +95,7 @@ pub fn main(init: std.process.Init) !void {
 
     try ensureDir(cfg.blog.staging_dir);
     try ensureDir(cfg.blog.pack_dir);
+    try ensureDir(cfg.presentation.pack_dir);
 
     var cloud = Cloudinary.init(
         allocator,
@@ -122,6 +125,31 @@ pub fn main(init: std.process.Init) !void {
         }, &cloud);
         defer vid.deinit();
         try vid.run();
+    }
+    {
+        var aud = videos.init(allocator, .{
+            .input_dir = cfg.blog.staging_dir,
+            .output_dir = cfg.blog.staging_dir,
+            .asset_root = cfg.blog.input_dir,
+            .public_id_prefix = cfg.cloudinary.pack_prefix,
+            .linkage_name = "audio-links.json",
+            .included_extensions = &libraries.processor.media.audio_extensions,
+        }, &cloud);
+        defer aud.deinit();
+        try aud.run();
+    }
+
+    try ensureDir(cfg.presentation.pack_dir);
+    const extra_dirs = try presentation.splitExtraDirs(allocator, cfg.presentation.extra_dirs);
+    defer if (extra_dirs.len > 0) allocator.free(extra_dirs);
+    {
+        var pres = presentation.Processor.init(allocator, .{
+            .input_dir = cfg.blog.staging_dir,
+            .pack_dir = cfg.presentation.pack_dir,
+            .extra_dirs = extra_dirs,
+        });
+        defer pres.deinit();
+        try pres.run();
     }
 
     var directory = try Directory.load(allocator, cfg.blog.staging_dir);
@@ -204,6 +232,90 @@ pub fn main(init: std.process.Init) !void {
     }
 
     try upload_state.save(allocator, cfg.blog.pack_dir);
+
+    var pres_upload = try UploadState.load(allocator, cfg.presentation.pack_dir);
+    defer pres_upload.deinit();
+    {
+        var pres_dir = fs.cwd().openDir(cfg.presentation.pack_dir, .{}) catch |err| switch (err) {
+            error.FileNotFound => {
+                std.log.info("pack complete: {d} documents, {d} chunks", .{
+                    manifest.data.documents.len,
+                    manifest.data.chunks.len,
+                });
+                return;
+            },
+            else => return err,
+        };
+        defer pres_dir.close();
+
+        var pres_index = deck_mod.LoadedIndex.load(allocator, pres_dir, "presentations.json") catch deck_mod.LoadedIndex.empty(allocator);
+        defer pres_index.deinit();
+
+        var pres_jobs: std.ArrayList(upload_pool.Job) = .empty;
+        defer pres_jobs.deinit(allocator);
+        var pres_meta: std.ArrayList(struct { file: []const u8, sha256: []const u8 }) = .empty;
+        defer pres_meta.deinit(allocator);
+
+        const index_bytes = pres_dir.readFileAlloc(allocator, "presentations.json", 16 * 1024 * 1024) catch null;
+        if (index_bytes) |bytes| {
+            defer allocator.free(bytes);
+            var digest: [std.crypto.hash.sha2.Sha256.digest_length]u8 = undefined;
+            std.crypto.hash.sha2.Sha256.hash(bytes, &digest, .{});
+            const hex = std.fmt.bytesToHex(digest, .lower);
+            const prev = pres_upload.chunks.get("presentations.json");
+            const changed = prev == null or !std.mem.eql(u8, prev.?, &hex);
+            if (changed) {
+                const local_path = try fs.path.join(job_strings, &.{ cfg.presentation.pack_dir, "presentations.json" });
+                const pid = try publicId(job_strings, cfg.cloudinary.pack_prefix, "presentations/presentations.json");
+                try pres_jobs.append(allocator, .{
+                    .id = pres_jobs.items.len,
+                    .path = local_path,
+                    .public_id = pid,
+                    .resource_type = .raw,
+                    .overwrite = true,
+                    .invalidate = true,
+                    .label = "presentations.json",
+                });
+                try pres_meta.append(allocator, .{
+                    .file = "presentations.json",
+                    .sha256 = try job_strings.dupe(u8, &hex),
+                });
+            }
+        }
+
+        for (pres_index.data.documents) |doc| {
+            const file = try std.fmt.allocPrint(job_strings, "{s}.json", .{doc.slug});
+            const prev = pres_upload.chunks.get(file);
+            const changed = prev == null or !std.mem.eql(u8, prev.?, doc.sha256);
+            if (!changed) continue;
+            const local_path = try fs.path.join(job_strings, &.{ cfg.presentation.pack_dir, file });
+            const pid = try publicId(job_strings, cfg.cloudinary.pack_prefix, file);
+            try pres_jobs.append(allocator, .{
+                .id = pres_jobs.items.len,
+                .path = local_path,
+                .public_id = pid,
+                .resource_type = .raw,
+                .overwrite = true,
+                .invalidate = true,
+                .label = file,
+            });
+            try pres_meta.append(allocator, .{ .file = file, .sha256 = doc.sha256 });
+        }
+
+        if (pres_jobs.items.len > 0) {
+            var outcome_p = try upload_pool.run(allocator, io, &cloud, pres_jobs.items);
+            defer outcome_p.deinit();
+            for (outcome_p.results) |result| {
+                if (!result.ok) continue;
+                const meta = pres_meta.items[result.id];
+                const key = try pres_upload.arena.allocator().dupe(u8, meta.file);
+                const val = try pres_upload.arena.allocator().dupe(u8, meta.sha256);
+                try pres_upload.chunks.put(allocator, key, val);
+            }
+        }
+        try pres_upload.save(allocator, cfg.presentation.pack_dir);
+    }
+
     std.log.info("pack complete: {d} documents, {d} chunks", .{
         manifest.data.documents.len,
         manifest.data.chunks.len,
