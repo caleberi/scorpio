@@ -1,5 +1,6 @@
 ---
 title: 'Building A New Ledger Solution: Transaction as an Event'
+summary: 'Building a new ledger solution for Cudium using event-driven architecture and MongoDB Atlas service trigger support.'
 authors: 
   - 'Adewole Caleb'
 date: 2026-09-12

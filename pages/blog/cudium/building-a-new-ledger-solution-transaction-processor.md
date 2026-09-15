@@ -1,6 +1,6 @@
 ---
 title: Building A New Ledger Solution - Transaction Processor
-description: Putting the pieces together in the processor to create a ledger.
+summary: Putting the pieces together in the processor to create a ledger.
 authors: 
   - 'Adewole Caleb'
 date: 2026-09-14
