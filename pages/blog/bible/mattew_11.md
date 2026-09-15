@@ -47,6 +47,8 @@ Therefore, I am of a strong opinion that the only way to be free from the weight
 
 The promise of rest. What is rest? In Hebrew, it means *menuchah* (מְנוּחָה) — from the root *nuach*, "to rest" or "to settle down." It's not just Sabbath, "stop working," which is a different word (*shabbat*, "to cease"). *Menuchah* is deeper than that. It's the settled, whole-hearted ease that comes *after* you stop striving — not just the absence of labour, but the presence of safety.
 
+> I saw an instagram reel talking about Menuchah and I did not know I will be using it in a post at the time.
+
 Think about it in gym terms. The moment I offload the bar to my spotter, something changes in my body. My legs stop shaking. My breathing slows. I'm not still under the bar — I've been let out from under it. That's *menuchah*. It's not merely "the set is over." It's "I am no longer at risk of being crushed."
 
 That's the rest Christ is promising in verse 28. He's not saying "take a break and come back to the weight later." He's saying "give me the bar, and you will find *menuchah* for your soul" — a rest that isn't just a pause between sets, but a settled state you get to live in because someone stronger is now holding what was going to kill you.
