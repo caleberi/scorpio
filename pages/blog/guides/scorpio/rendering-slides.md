@@ -11,7 +11,7 @@ topics:
   - 'Talks'
 fps: 30
 size: 1920x1080
-image: '![image](../../../../blobs/cover52.webp)'
+image: '![image](../../../../blobs/cover36.webp)'
 ---
 
 This README is both a blog post and a tagged deck. The source of truth for the renderer contract is [`libraries/processor/presentation/RENDER.md`](/posts/blog/guides/scorpio/rendering-slides). Any markdown file that contains at least one slide block compiles to `packed/presentations/<slug>.json`.
