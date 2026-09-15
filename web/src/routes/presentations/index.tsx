@@ -3,9 +3,12 @@ import { createFileRoute } from '@tanstack/react-router'
 import { ArticleCard } from '@/components/ArticleCard'
 import { PageFrame } from '@/components/PageFrame'
 import { Pagination } from '@/components/Pagination'
+import { useDocumentCards } from '@/hooks/useDocumentCards'
 import { useApp } from '@/lib/app-context'
+import type { BlogListing } from '@/lib/api'
 import { LIST_PAGE_SIZE } from '@/lib/constants'
-import { formatClock } from '@/lib/presentation'
+import { coverMedia } from '@/lib/frontmatter'
+import { formatClock, type PresentationListing } from '@/lib/presentation'
 
 export const Route = createFileRoute('/presentations/')({
   validateSearch: (search: Record<string, unknown>): { page?: number } => {
@@ -58,6 +61,12 @@ function SlidesIndex() {
     return presentations.slice(start, start + LIST_PAGE_SIZE)
   }, [presentations, currentPage])
 
+  const listings = useMemo(() => {
+    const missingCover = pageDocs.some((deck) => !coverMedia(deck.image))
+    return missingCover ? pageDocs.map(deckToListing) : []
+  }, [pageDocs])
+  const cards = useDocumentCards(listings)
+
   return (
     <PageFrame sidebarKind="slides">
       <div className="section-label grid-plus border-b border-ink/30 pb-2">
@@ -81,6 +90,10 @@ function SlidesIndex() {
                 excerpt={`${formatClock(deck.duration_ms)} · ${deck.size.w}×${deck.size.h} · ${deck.path}`}
                 tags={[]}
                 figure={(currentPage - 1) * LIST_PAGE_SIZE + i + 1}
+                cover={
+                  coverMedia(deck.image) ??
+                  (cards[i]?.slug === deck.slug ? cards[i]?.cover : undefined)
+                }
                 to="/presentations/$"
               />
             </div>
@@ -105,4 +118,13 @@ function SlidesIndex() {
       )}
     </PageFrame>
   )
+}
+
+function deckToListing(deck: PresentationListing): BlogListing {
+  return {
+    slug: deck.slug,
+    path: deck.path,
+    modified_at: 0,
+    length: 0,
+  }
 }

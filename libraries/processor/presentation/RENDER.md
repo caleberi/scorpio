@@ -6,7 +6,7 @@ Unknown node `kind`s, channels, and fields must be skipped (`ignore_unknown_fiel
 
 ## Fetch
 
-- `GET /presentation` → `{ documents: [{ slug, title, path, duration_ms, size }] }` for the slides listing tab
+- `GET /presentation` → `{ documents: [{ slug, title, path, duration_ms, size, image }] }` for the slides listing tab. `image` is the frontmatter cover (URL, markdown `![alt](url)`, or `<video>`).
 - `GET /presentation/*slug` → the deck object below
 - Listing UI lives at `/presentations`; player at `/presentations/<slug>` (e.g. `/presentations/blog/projects/hercules/architecture`)
 

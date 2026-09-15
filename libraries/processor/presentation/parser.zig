@@ -55,6 +55,7 @@ fn endsWithIgnoreCase(haystack: []const u8, suffix: []const u8) bool {
 const Frontmatter = struct {
     title: []const u8 = "",
     soundtrack: []const u8 = "",
+    image: []const u8 = "",
     fps: u32 = 30,
     width: u32 = 1920,
     height: u32 = 1080,
@@ -82,6 +83,7 @@ fn stripFrontmatter(content: []const u8) Frontmatter {
         }
         if (zstd.mem.eql(u8, key, "title")) meta.title = value;
         if (zstd.mem.eql(u8, key, "soundtrack")) meta.soundtrack = value;
+        if (zstd.mem.eql(u8, key, "image")) meta.image = value;
         if (zstd.mem.eql(u8, key, "background") or zstd.mem.eql(u8, key, "bg")) meta.background = value;
         if (zstd.mem.eql(u8, key, "color") or zstd.mem.eql(u8, key, "fill")) meta.color = value;
         if (zstd.mem.eql(u8, key, "font") or zstd.mem.eql(u8, key, "font-family")) meta.font = value;
@@ -999,6 +1001,7 @@ pub fn compile(allocator: zstd.mem.Allocator, source: []const u8, opts: CompileO
         .fps = fm.fps,
         .size = .{ .w = fm.width, .h = fm.height },
         .soundtrack = soundtrack,
+        .image = try allocator.dupe(u8, fm.image),
         .slides = try slides.toOwnedSlice(allocator),
     };
 }
@@ -1022,6 +1025,7 @@ test "compile two slides with keyframes and table" {
         \\fps: 30
         \\size: 1920x1080
         \\soundtrack: ./audio/talk.mp3
+        \\image: '![image](./cover.webp)'
         \\---
         \\
         \\<slide id="open" duration="4s" transition="fade">
@@ -1057,6 +1061,7 @@ test "compile two slides with keyframes and table" {
     ;
 
     const compiled = try compile(a, src, .{ .slug = "demo", .path = "demo.md" });
+    try testing.expectEqualStrings("![image](./cover.webp)", compiled.image);
     try testing.expectEqual(@as(usize, 2), compiled.slides.len);
     try testing.expectEqualStrings("open", compiled.slides[0].id);
     try testing.expectEqualStrings("idea", compiled.slides[1].id);

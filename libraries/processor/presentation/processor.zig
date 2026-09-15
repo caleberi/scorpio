@@ -116,6 +116,7 @@ pub const Processor = struct {
                 .path = try self.arena.allocator().dupe(u8, compiled.path),
                 .duration_ms = deck_mod.durationOf(compiled),
                 .size = compiled.size,
+                .image = try self.arena.allocator().dupe(u8, compiled.image),
                 .sha256 = hex,
             });
         }
@@ -125,6 +126,9 @@ pub const Processor = struct {
         if (compiled.soundtrack) |*track| {
             track.url = self.rewriteUrl(track.url);
         }
+        if (compiled.image.len > 0) {
+            compiled.image = self.rewriteCover(compiled.image);
+        }
         for (compiled.slides) |*slide| {
             for (slide.cues) |*cue| {
                 cue.url = self.rewriteUrl(cue.url);
@@ -133,6 +137,20 @@ pub const Processor = struct {
                 if (node.src.len > 0) node.src = self.rewriteUrl(node.src);
             }
         }
+    }
+
+    /// Keep markdown/HTML cover syntax; rewrite only the local src when mapped.
+    fn rewriteCover(self: *Processor, value: []const u8) []const u8 {
+        const src = coverSrc(value);
+        const mapped = self.rewriteUrl(src);
+        if (mapped.ptr == src.ptr and mapped.len == src.len) return value;
+        if (zstd.mem.eql(u8, mapped, src)) return value;
+        if (zstd.mem.eql(u8, value, src)) return mapped;
+        const strings = self.arena.allocator();
+        if (zstd.mem.indexOf(u8, value, src)) |at| {
+            return zstd.mem.concat(strings, u8, &.{ value[0..at], mapped, value[at + src.len ..] }) catch mapped;
+        }
+        return mapped;
     }
 
     fn rewriteUrl(self: *Processor, url: []const u8) []const u8 {
@@ -165,6 +183,43 @@ fn relativePath(root: []const u8, abs_path: []const u8) ?[]const u8 {
     if (!zstd.mem.startsWith(u8, abs_path, root)) return null;
     if (abs_path.len <= root.len + 1) return null;
     return abs_path[root.len + 1 ..];
+}
+
+fn coverSrc(value: []const u8) []const u8 {
+    const trimmed = zstd.mem.trim(u8, value, " \t");
+    if (zstd.mem.startsWith(u8, trimmed, "![")) {
+        const open = zstd.mem.indexOf(u8, trimmed, "](") orelse return trimmed;
+        var start = open + 2;
+        while (start < trimmed.len and (trimmed[start] == ' ' or trimmed[start] == '<')) start += 1;
+        var end = start;
+        while (end < trimmed.len and trimmed[end] != ')' and trimmed[end] != ' ' and trimmed[end] != '>') end += 1;
+        if (end > start) return trimmed[start..end];
+        return trimmed;
+    }
+    if (trimmed.len >= 6 and zstd.ascii.eqlIgnoreCase(trimmed[0..6], "<video")) {
+        const marker = "src=";
+        const at = indexOfIgnoreCase(trimmed, marker) orelse return trimmed;
+        var p = at + marker.len;
+        while (p < trimmed.len and trimmed[p] == ' ') p += 1;
+        if (p >= trimmed.len) return trimmed;
+        if (trimmed[p] == '"' or trimmed[p] == '\'') {
+            const q = trimmed[p];
+            const start = p + 1;
+            const close = zstd.mem.indexOfScalarPos(u8, trimmed, start, q) orelse return trimmed;
+            return trimmed[start..close];
+        }
+    }
+    return trimmed;
+}
+
+fn indexOfIgnoreCase(haystack: []const u8, needle: []const u8) ?usize {
+    if (needle.len == 0) return 0;
+    if (haystack.len < needle.len) return null;
+    var i: usize = 0;
+    while (i + needle.len <= haystack.len) : (i += 1) {
+        if (zstd.ascii.eqlIgnoreCase(haystack[i .. i + needle.len], needle)) return i;
+    }
+    return null;
 }
 
 fn isHidden(rel_path: []const u8) bool {
@@ -207,6 +262,7 @@ test "processor compiles tagged readme and skips sibling without slides" {
         .data =
         \\---
         \\title: Demo Talk
+        \\image: '![image](./cover.webp)'
         \\---
         \\
         \\# Talk
@@ -230,6 +286,7 @@ test "processor compiles tagged readme and skips sibling without slides" {
     var proc = Processor.init(allocator, .{ .input_dir = src_path, .pack_dir = pack_dir });
     defer proc.deinit();
     try proc.putRewrite("./whoosh.mp3", "https://cdn.example.com/whoosh.mp3");
+    try proc.putRewrite("./cover.webp", "https://cdn.example.com/cover.webp");
     try proc.run();
 
     var out_dir = try fs.cwd().openDir(pack_dir, .{});
@@ -244,12 +301,14 @@ test "processor compiles tagged readme and skips sibling without slides" {
     try testing.expectEqual(@as(usize, 1), index.documents.len);
     try testing.expectEqualStrings("blog/talk", index.documents[0].slug);
     try testing.expectEqualStrings("Demo Talk", index.documents[0].title);
+    try testing.expectEqualStrings("![image](https://cdn.example.com/cover.webp)", index.documents[0].image);
 
     const deck_bytes = try out_dir.readFileAlloc(allocator, "blog/talk.json", 1024 * 1024);
     defer allocator.free(deck_bytes);
     const compiled = try deck_mod.deserializeDeck(arena.allocator(), deck_bytes);
     try testing.expectEqual(@as(usize, 1), compiled.slides.len);
     try testing.expectEqualStrings("open", compiled.slides[0].id);
+    try testing.expectEqualStrings("![image](https://cdn.example.com/cover.webp)", compiled.image);
 }
 
 test "rewrite map replaces soundtrack url" {
@@ -258,6 +317,11 @@ test "rewrite map replaces soundtrack url" {
     var proc = Processor.init(testing.allocator, .{ .input_dir = ".", .pack_dir = "." });
     defer proc.deinit();
     try proc.putRewrite("./audio/talk.mp3", "https://cdn.example.com/talk.mp3");
+    try proc.putRewrite("./cover.webp", "https://cdn.example.com/cover.webp");
     try testing.expectEqualStrings("https://cdn.example.com/talk.mp3", proc.rewriteUrl("./audio/talk.mp3"));
     try testing.expectEqualStrings("keep.mp3", proc.rewriteUrl("keep.mp3"));
+    try testing.expectEqualStrings(
+        "![image](https://cdn.example.com/cover.webp)",
+        proc.rewriteCover("![image](./cover.webp)"),
+    );
 }

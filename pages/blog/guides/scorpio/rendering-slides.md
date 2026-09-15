@@ -18,7 +18,7 @@ This README is both a blog post and a tagged deck. The source of truth for the r
 
 ## Fetch
 
-- `GET /presentation` → `{ documents: [{ slug, title, path, duration_ms, size }] }`
+- `GET /presentation` → `{ documents: [{ slug, title, path, duration_ms, size, image }] }`
 - `GET /presentation/*slug` → the deck object
 - Types in `web/src/lib/presentation.ts` mirror `deck.zig`
 - Listing: `/presentations`. Player: `/presentations/<slug>`
