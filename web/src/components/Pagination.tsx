@@ -9,6 +9,7 @@ export function Pagination({
   nextLabel,
   pageOf,
   ariaLabel,
+  to = '/',
 }: {
   page: number
   totalPages: number
@@ -16,6 +17,7 @@ export function Pagination({
   nextLabel: string
   pageOf: string
   ariaLabel: string
+  to?: '/' | '/presentations'
 }) {
   if (totalPages <= 1) return null
 
@@ -27,12 +29,14 @@ export function Pagination({
       className="mt-12 grid-plus flex items-center justify-between border-t border-ink/30 pt-4"
     >
       <PaginationLink
+        to={to}
         page={page - 1}
         enabled={page > 1}
         label={prevLabel}
       />
       <span className="section-label px-3 text-center">{status}</span>
       <PaginationLink
+        to={to}
         page={page + 1}
         enabled={page < totalPages}
         label={nextLabel}
@@ -43,11 +47,13 @@ export function Pagination({
 }
 
 function PaginationLink({
+  to,
   page,
   enabled,
   label,
   align = 'left',
 }: {
+  to: '/' | '/presentations'
   page: number
   enabled: boolean
   label: string
@@ -71,7 +77,7 @@ function PaginationLink({
 
   return (
     <Link
-      to="/"
+      to={to}
       search={page <= 1 ? {} : { page }}
       className={className}
     >

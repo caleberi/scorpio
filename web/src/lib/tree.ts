@@ -1,10 +1,10 @@
-import type { BlogListing } from './api'
+export type TreeSource = { path: string; slug: string }
 
 export type TreeNode =
   | { kind: 'dir'; name: string; path: string; children: TreeNode[] }
-  | { kind: 'file'; name: string; path: string; slug: string; doc: BlogListing }
+  | { kind: 'file'; name: string; path: string; slug: string }
 
-export function buildTree(docs: BlogListing[]): TreeNode[] {
+export function buildTree(docs: TreeSource[]): TreeNode[] {
   const root: TreeNode[] = []
 
   for (const doc of docs) {
@@ -22,7 +22,6 @@ export function buildTree(docs: BlogListing[]): TreeNode[] {
           name: `${part}.md`,
           path: doc.path,
           slug: doc.slug,
-          doc,
         })
         return
       }

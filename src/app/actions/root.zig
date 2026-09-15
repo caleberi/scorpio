@@ -15,3 +15,8 @@ pub const replies = struct {
     pub const Update = @import("replies/update.zig").Update;
     pub const Delete = @import("replies/delete.zig").Delete;
 };
+
+pub const presentations = struct {
+    pub const List = @import("presentations/list.zig").List;
+    pub const Get = @import("presentations/get.zig").Get;
+};

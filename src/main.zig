@@ -60,6 +60,23 @@ pub fn main(init: zstd.process.Init) !void {
     };
     defer app_state.manifest.deinit();
 
+    app_state.presentations = blk: {
+        var pres_dir = fs.cwd().openDir(cfg.presentation.pack_dir, .{}) catch {
+            zstd.log.warn("no presentation pack at {s}; slides listing will be empty", .{cfg.presentation.pack_dir});
+            break :blk libraries.processor.presentation.deck.LoadedIndex.empty(allocator);
+        };
+        defer pres_dir.close();
+        break :blk libraries.processor.presentation.deck.LoadedIndex.load(
+            allocator,
+            pres_dir,
+            "presentations.json",
+        ) catch |err| {
+            zstd.log.warn("failed to load presentations.json: {}", .{err});
+            break :blk libraries.processor.presentation.deck.LoadedIndex.empty(allocator);
+        };
+    };
+    defer app_state.presentations.deinit();
+
     app_state.cloud = Cloudinary.init(
         allocator,
         io,
@@ -95,6 +112,9 @@ pub fn main(init: zstd.process.Init) !void {
     try app_router.register(.PUT, "/blog/*slug/comments/:comment_id/replies/:reply_id", actions.replies.Update);
     try app_router.register(.DELETE, "/blog/*slug/comments/:comment_id/replies/:reply_id", actions.replies.Delete);
     try app_router.register(.GET, "/blog/*slug", actions.blogs.Get);
+
+    try app_router.register(.GET, "/presentation", actions.presentations.List);
+    try app_router.register(.GET, "/presentation/*slug", actions.presentations.Get);
 
     const port: u16 = @intCast(cfg.server.port);
     var listener = zap.HttpListener.init(.{

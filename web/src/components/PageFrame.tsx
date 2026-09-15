@@ -5,17 +5,19 @@ import { cn } from '@/lib/utils'
 export function PageFrame({
   hero,
   sidebar = true,
+  sidebarKind = 'blog',
   children,
 }: {
   hero?: ReactNode
   sidebar?: boolean
+  sidebarKind?: 'blog' | 'slides'
   children: ReactNode
 }) {
   return (
     <div className="flex flex-1 flex-col">
       {hero}
       <div className="flex flex-1">
-        {sidebar ? <Sidebar /> : null}
+        {sidebar ? <Sidebar kind={sidebarKind} /> : null}
         <div
           className={cn(
             'min-w-0 flex-1 px-4 md:px-8',

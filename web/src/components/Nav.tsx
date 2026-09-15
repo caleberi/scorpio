@@ -4,7 +4,7 @@ import { SOCIAL } from '@/lib/socials'
 import { cn } from '@/lib/utils'
 
 type NavItem =
-  | { key: string; kind: 'route'; label: string; to: '/' }
+  | { key: string; kind: 'route'; label: string; to: '/' | '/presentations' }
   | { key: string; kind: 'external'; label: string; href: string }
 
 export function Nav() {
@@ -12,6 +12,7 @@ export function Nav() {
 
   const links: NavItem[] = [
     { key: 'B', kind: 'route', label: t.nav.blog, to: '/' },
+    { key: 'S', kind: 'route', label: t.nav.slides, to: '/presentations' },
     { key: 'G', kind: 'external', label: t.nav.github, href: SOCIAL.github },
     {
       key: 'U',

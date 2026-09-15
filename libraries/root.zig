@@ -7,6 +7,17 @@ pub const processor = struct {
     pub const media = @import("processor/media/link.zig");
     pub const images = @import("processor/images/processor.zig");
     pub const videos = @import("processor/videos/processor.zig");
+    pub const presentation = struct {
+        pub const processor = @import("processor/presentation/processor.zig");
+        pub const parser = @import("processor/presentation/parser.zig");
+        pub const deck = @import("processor/presentation/deck.zig");
+        pub const animation = @import("processor/presentation/renderer/animation.zig");
+        pub const carousel = @import("processor/presentation/renderer/carousel.zig");
+        pub const color = @import("processor/presentation/components/color.zig");
+        pub const shape = @import("processor/presentation/components/shape.zig");
+        pub const canvas = @import("processor/presentation/components/canvas.zig");
+        pub const painter = @import("processor/presentation/components/painter.zig");
+    };
 };
 
 pub const validation = struct {
@@ -45,6 +56,13 @@ test {
     _ = processor.media;
     _ = processor.images;
     _ = processor.videos;
+    _ = processor.presentation.processor;
+    _ = processor.presentation.parser;
+    _ = processor.presentation.deck;
+    _ = processor.presentation.animation;
+    _ = processor.presentation.carousel;
+    _ = processor.presentation.color;
+    _ = processor.presentation.shape;
     _ = uploader.cloudinary;
     _ = uploader.pool;
     _ = router;

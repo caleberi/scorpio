@@ -45,6 +45,10 @@ function Shell() {
           e.preventDefault()
           void navigate({ to: '/' })
           break
+        case KEYBOARD_SHORTCUTS.slides:
+          e.preventDefault()
+          void navigate({ to: '/presentations' })
+          break
         case KEYBOARD_SHORTCUTS.console:
           e.preventDefault()
           toggleConsole()

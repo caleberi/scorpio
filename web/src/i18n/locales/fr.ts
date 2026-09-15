@@ -3,6 +3,7 @@ import type { Messages } from '@/i18n/types'
 export const fr: Messages = {
   nav: {
     blog: 'BLOG',
+    slides: 'DIAPOS',
     github: 'GITHUB',
     community: 'COMMUNAUTÉ',
     console: 'Console',
@@ -10,6 +11,7 @@ export const fr: Messages = {
   },
   sidebar: {
     pagesBlog: '/ pages/blog',
+    slides: '/ diapositives',
     loading: 'chargement…',
     language: '/ langue',
   },
@@ -40,6 +42,7 @@ export const fr: Messages = {
     unknownAuthor: 'Inconnu',
     missingTipBefore: 'Astuce : la plupart des articles sont sous un chemin',
     missingTipAfter: ', p. ex.',
+    playSlides: 'Lire les diapositives',
   },
   metadata: {
     label: '/ Métadonnées',
@@ -102,6 +105,20 @@ export const fr: Messages = {
   },
   article: {
     figure: '[ FIG. {n} ]',
+  },
+  slides: {
+    related: '/ Diapositives',
+    loading: 'chargement des présentations…',
+    empty: 'Aucune présentation empaquetée. Ajoutez des balises `<slide>` à un README, puis lancez `zig build pack`.',
+    pagination: 'Pagination des diapositives',
+    missingLabel: '/ Présentation manquante',
+    missingTitle: 'Cette présentation n’est pas ici',
+    back: 'Retour aux diapositives',
+    record: 'Enregistrer la vidéo',
+    recording: 'Enregistrement…',
+    recordFailed: 'L’enregistrement a échoué. Chrome ou Firefox capturent généralement le canvas.',
+    outline: 'Plan',
+    unsupportedVersion: 'Ce deck utilise la version {n}, que ce lecteur ne peut pas ouvrir.',
   },
   common: {
     failedToLoad: 'Échec du chargement',

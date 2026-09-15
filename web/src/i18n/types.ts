@@ -1,6 +1,7 @@
 export type Messages = {
   nav: {
     blog: string
+    slides: string
     github: string
     community: string
     console: string
@@ -8,6 +9,7 @@ export type Messages = {
   }
   sidebar: {
     pagesBlog: string
+    slides: string
     loading: string
     language: string
   }
@@ -38,6 +40,7 @@ export type Messages = {
     unknownAuthor: string
     missingTipBefore: string
     missingTipAfter: string
+    playSlides: string
   }
   metadata: {
     label: string
@@ -100,6 +103,20 @@ export type Messages = {
   }
   article: {
     figure: string
+  }
+  slides: {
+    related: string
+    loading: string
+    empty: string
+    pagination: string
+    missingLabel: string
+    missingTitle: string
+    back: string
+    record: string
+    recording: string
+    recordFailed: string
+    outline: string
+    unsupportedVersion: string
   }
   common: {
     failedToLoad: string

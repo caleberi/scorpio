@@ -35,6 +35,9 @@ pub const image_extensions = [_][]const u8{
 pub const video_extensions = [_][]const u8{
     ".mp4", ".webm", ".mov", ".m4v", ".ogv",
 };
+pub const audio_extensions = [_][]const u8{
+    ".mp3", ".wav", ".ogg", ".m4a",
+};
 
 /// The media family a wrapper handles. Kept for API parity; the resource type
 /// carried by `Config` is what actually drives uploads.

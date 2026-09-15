@@ -7,10 +7,29 @@ import { TREE_INDENT_PX } from '@/lib/constants'
 import { buildTree, type TreeNode } from '@/lib/tree'
 import { cn } from '@/lib/utils'
 
-export function Sidebar({ className }: { className?: string }) {
-  const { documents, documentsLoading, documentsError, t } = useApp()
-  const tree = useMemo(() => buildTree(documents), [documents])
+export function Sidebar({
+  className,
+  kind = 'blog',
+}: {
+  className?: string
+  kind?: 'blog' | 'slides'
+}) {
+  const {
+    documents,
+    documentsLoading,
+    documentsError,
+    presentations,
+    presentationsLoading,
+    presentationsError,
+    t,
+  } = useApp()
+  const listings = kind === 'slides' ? presentations : documents
+  const loading = kind === 'slides' ? presentationsLoading : documentsLoading
+  const error = kind === 'slides' ? presentationsError : documentsError
+  const tree = useMemo(() => buildTree(listings), [listings])
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const label = kind === 'slides' ? t.sidebar.slides : t.sidebar.pagesBlog
+  const linkPrefix = kind === 'slides' ? '/presentations/' : '/posts/'
 
   return (
     <aside
@@ -21,17 +40,22 @@ export function Sidebar({ className }: { className?: string }) {
     >
       <div className="sticky top-0 flex max-h-[calc(100vh-3rem)] flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          <div className="section-label mb-3">{t.sidebar.pagesBlog}</div>
-          {documentsLoading && (
+          <div className="section-label mb-3">{label}</div>
+          {loading && (
             <p className="font-mono text-sm text-muted">{t.sidebar.loading}</p>
           )}
-          {documentsError && (
-            <p className="font-mono text-sm text-red-700">{documentsError}</p>
+          {error && (
+            <p className="font-mono text-sm text-red-700">{error}</p>
           )}
-          {!documentsLoading && !documentsError && (
+          {!loading && !error && (
             <ul className="space-y-0.5 font-mono text-[15px]">
               {tree.map((node) => (
-                <TreeItem key={node.path} node={node} activePath={pathname} />
+                <TreeItem
+                  key={node.path}
+                  node={node}
+                  activePath={pathname}
+                  linkPrefix={linkPrefix}
+                />
               ))}
             </ul>
           )}
@@ -46,10 +70,12 @@ export function Sidebar({ className }: { className?: string }) {
 function TreeItem({
   node,
   activePath,
+  linkPrefix,
   depth = 0,
 }: {
   node: TreeNode
   activePath: string
+  linkPrefix: string
   depth?: number
 }) {
   const [open, setOpen] = useState(true)
@@ -78,6 +104,7 @@ function TreeItem({
                   key={child.path}
                   node={child}
                   activePath={activePath}
+                  linkPrefix={linkPrefix}
                   depth={depth + 1}
                 />
               ))}
@@ -86,12 +113,15 @@ function TreeItem({
         </li>
       )
     case 'file': {
-      const href = `/posts/${node.slug}`
+      const href = `${linkPrefix}${node.slug}`
       const active = activePath === href || activePath.startsWith(`${href}/`)
+      const to = linkPrefix.startsWith('/presentations')
+        ? '/presentations/$'
+        : '/posts/$'
       return (
         <li>
           <Link
-            to="/posts/$"
+            to={to}
             params={{ _splat: node.slug }}
             className={cn(
               'flex items-center gap-1.5 rounded px-1 py-0.5 hover:bg-ink/[0.06]',

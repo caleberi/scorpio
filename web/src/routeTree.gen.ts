@@ -11,6 +11,8 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PostsSplatRouteImport } from './routes/posts.$'
+import { Route as PresentationsIndexRouteImport } from './routes/presentations/index'
+import { Route as PresentationsSplatRouteImport } from './routes/presentations/$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +24,49 @@ const PostsSplatRoute = PostsSplatRouteImport.update({
   path: '/posts/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PresentationsIndexRoute = PresentationsIndexRouteImport.update({
+  id: '/presentations/',
+  path: '/presentations/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PresentationsSplatRoute = PresentationsSplatRouteImport.update({
+  id: '/presentations/$',
+  path: '/presentations/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/posts/$': typeof PostsSplatRoute
+  '/presentations/$': typeof PresentationsSplatRoute
+  '/presentations/': typeof PresentationsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/posts/$': typeof PostsSplatRoute
+  '/presentations/$': typeof PresentationsSplatRoute
+  '/presentations': typeof PresentationsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/posts/$': typeof PostsSplatRoute
+  '/presentations/$': typeof PresentationsSplatRoute
+  '/presentations/': typeof PresentationsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/posts/$'
+  fullPaths: '/' | '/posts/$' | '/presentations/$' | '/presentations/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/posts/$'
-  id: '__root__' | '/' | '/posts/$'
+  to: '/' | '/posts/$' | '/presentations/$' | '/presentations'
+  id: '__root__' | '/' | '/posts/$' | '/presentations/$' | '/presentations/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   PostsSplatRoute: typeof PostsSplatRoute
+  PresentationsSplatRoute: typeof PresentationsSplatRoute
+  PresentationsIndexRoute: typeof PresentationsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +85,28 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PostsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/presentations/': {
+      id: '/presentations/'
+      path: '/presentations'
+      fullPath: '/presentations/'
+      preLoaderRoute: typeof PresentationsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/presentations/$': {
+      id: '/presentations/$'
+      path: '/presentations/$'
+      fullPath: '/presentations/$'
+      preLoaderRoute: typeof PresentationsSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   PostsSplatRoute: PostsSplatRoute,
+  PresentationsSplatRoute: PresentationsSplatRoute,
+  PresentationsIndexRoute: PresentationsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
