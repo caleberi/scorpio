@@ -1,5 +1,11 @@
-import { API_BLOG, BLOG_PREFIX, JSON_HEADERS } from '@/lib/constants'
+import {
+  API_BLOG,
+  API_PRESENTATION,
+  BLOG_PREFIX,
+  JSON_HEADERS,
+} from '@/lib/constants'
 import { recordResponse } from '@/lib/perf'
+import type { Deck, PresentationListing } from '@/lib/presentation'
 
 export type BlogListing = {
   slug: string
@@ -48,8 +54,13 @@ function blogUrl(slug?: string, ...rest: string[]): string {
   return parts.join('/')
 }
 
+function presentationUrl(slug?: string): string {
+  if (!slug) return API_PRESENTATION
+  return `${API_PRESENTATION}/${encodeSlug(slug)}`
+}
+
 /** Try common slug variants when pack paths use a blog/ prefix. */
-function slugCandidates(slug: string): string[] {
+export function slugCandidates(slug: string): string[] {
   const trimmed = slug.replace(/^\/+|\/+$/g, '')
   const out = [trimmed]
   switch (trimmed) {
@@ -120,6 +131,23 @@ export async function getDocument(slug: string): Promise<BlogDocument> {
     slug,
     "We couldn't find that post. It may have moved, or the link is incomplete.",
     (candidate) => requestJson<BlogDocument>(blogUrl(candidate), ''),
+  )
+}
+
+export async function listPresentations(): Promise<PresentationListing[]> {
+  const result = await requestJson<{ documents: PresentationListing[] }>(
+    API_PRESENTATION,
+    "We couldn't load the slides list. Is the API running?",
+  )
+  if (!result.ok) throw new Error(result.message)
+  return result.data.documents ?? []
+}
+
+export async function getPresentation(slug: string): Promise<Deck> {
+  return firstOk(
+    slug,
+    "We couldn't find that presentation. It may have moved, or the link is incomplete.",
+    (candidate) => requestJson<Deck>(presentationUrl(candidate), ''),
   )
 }
 

@@ -3,6 +3,7 @@ import type { Messages } from '@/i18n/types'
 export const ja: Messages = {
   nav: {
     blog: 'ブログ',
+    slides: 'スライド',
     github: 'GITHUB',
     community: 'コミュニティ',
     console: 'コンソール',
@@ -10,6 +11,7 @@ export const ja: Messages = {
   },
   sidebar: {
     pagesBlog: '/ pages/blog',
+    slides: '/ スライド',
     loading: '読み込み中…',
     language: '/ 言語',
   },
@@ -40,6 +42,7 @@ export const ja: Messages = {
     unknownAuthor: '不明',
     missingTipBefore: 'ヒント: ほとんどの記事は',
     missingTipAfter: 'パス配下にあります。例:',
+    playSlides: 'スライドを再生',
   },
   metadata: {
     label: '/ メタデータ',
@@ -102,6 +105,20 @@ export const ja: Messages = {
   },
   article: {
     figure: '[ FIG. {n} ]',
+  },
+  slides: {
+    related: '/ スライド',
+    loading: 'デッキを読み込み中…',
+    empty: 'パック済みのプレゼンがありません。README に `<slide>` を追加して `zig build pack` を実行してください。',
+    pagination: 'スライド一覧のページ送り',
+    missingLabel: '/ 見つかりません',
+    missingTitle: 'このプレゼンはありません',
+    back: 'スライド一覧へ',
+    record: '動画を録画',
+    recording: '録画中…',
+    recordFailed: '録画に失敗しました。Chrome か Firefox ならキャンバスを録画できることが多いです。',
+    outline: '目次',
+    unsupportedVersion: 'このデッキはバージョン {n} で、このプレイヤーでは開けません。',
   },
   common: {
     failedToLoad: '読み込みに失敗しました',

@@ -14,7 +14,7 @@ import {
   type Locale,
   type Messages,
 } from '@/i18n'
-import { listDocuments, type BlogListing } from '@/lib/api'
+import { listDocuments, listPresentations, type BlogListing } from '@/lib/api'
 import {
   DEFAULT_CONSOLE_STATE,
   DEFAULT_THEME,
@@ -23,6 +23,7 @@ import {
 } from '@/lib/constants'
 import { errorMessage } from '@/lib/errors'
 import { isDarkTheme, isThemeName } from '@/lib/highlight'
+import type { PresentationListing } from '@/lib/presentation'
 
 type ConsoleState = 'open' | 'minimized' | 'closed'
 
@@ -31,6 +32,10 @@ type AppContextValue = {
   documentsLoading: boolean
   documentsError: string | null
   refreshDocuments: () => Promise<void>
+  presentations: PresentationListing[]
+  presentationsLoading: boolean
+  presentationsError: string | null
+  refreshPresentations: () => Promise<void>
   consoleState: ConsoleState
   setConsoleState: (s: ConsoleState) => void
   toggleConsole: () => void
@@ -69,6 +74,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [documents, setDocuments] = useState<BlogListing[]>([])
   const [documentsLoading, setDocumentsLoading] = useState(true)
   const [documentsError, setDocumentsError] = useState<string | null>(null)
+  const [presentations, setPresentations] = useState<PresentationListing[]>([])
+  const [presentationsLoading, setPresentationsLoading] = useState(true)
+  const [presentationsError, setPresentationsError] = useState<string | null>(null)
   const [consoleState, setConsoleStateRaw] = useState<ConsoleState>(() =>
     typeof window === 'undefined' ? DEFAULT_CONSOLE_STATE : readStoredConsole(),
   )
@@ -115,9 +123,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setDocumentsLoading(false)
   }, [])
 
+  const refreshPresentations = useCallback(async () => {
+    setPresentationsLoading(true)
+    setPresentationsError(null)
+    const decks = await listPresentations().catch((err: unknown) => {
+      setPresentationsError(errorMessage(err, MESSAGES.en.common.failedToLoad))
+      return null
+    })
+    if (decks) setPresentations(decks)
+    setPresentationsLoading(false)
+  }, [])
+
   useEffect(() => {
     void refreshDocuments()
   }, [refreshDocuments])
+
+  useEffect(() => {
+    void refreshPresentations()
+  }, [refreshPresentations])
 
   useEffect(() => {
     const root = document.documentElement
@@ -138,6 +161,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       documentsLoading,
       documentsError,
       refreshDocuments,
+      presentations,
+      presentationsLoading,
+      presentationsError,
+      refreshPresentations,
       consoleState,
       setConsoleState,
       toggleConsole,
@@ -152,6 +179,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       documentsLoading,
       documentsError,
       refreshDocuments,
+      presentations,
+      presentationsLoading,
+      presentationsError,
+      refreshPresentations,
       consoleState,
       setConsoleState,
       toggleConsole,

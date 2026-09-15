@@ -3,6 +3,7 @@ import type { Messages } from '@/i18n/types'
 export const es: Messages = {
   nav: {
     blog: 'BLOG',
+    slides: 'DIAPOSITIVAS',
     github: 'GITHUB',
     community: 'COMUNIDAD',
     console: 'Consola',
@@ -10,6 +11,7 @@ export const es: Messages = {
   },
   sidebar: {
     pagesBlog: '/ pages/blog',
+    slides: '/ diapositivas',
     loading: 'cargando…',
     language: '/ idioma',
   },
@@ -40,6 +42,7 @@ export const es: Messages = {
     unknownAuthor: 'Desconocido',
     missingTipBefore: 'Consejo: la mayoría de los artículos están bajo una ruta',
     missingTipAfter: ', p. ej.',
+    playSlides: 'Reproducir diapositivas',
   },
   metadata: {
     label: '/ Metadatos',
@@ -102,6 +105,20 @@ export const es: Messages = {
   },
   article: {
     figure: '[ FIG. {n} ]',
+  },
+  slides: {
+    related: '/ Diapositivas',
+    loading: 'cargando presentaciones…',
+    empty: 'No hay presentaciones empaquetadas. Añade etiquetas `<slide>` a un README y ejecuta `zig build pack`.',
+    pagination: 'Paginación de diapositivas',
+    missingLabel: '/ Presentación ausente',
+    missingTitle: 'Esta presentación no está aquí',
+    back: 'Volver a las diapositivas',
+    record: 'Grabar vídeo',
+    recording: 'Grabando…',
+    recordFailed: 'La grabación falló. Prueba Chrome o Firefox; este navegador puede no capturar el canvas.',
+    outline: 'Índice',
+    unsupportedVersion: 'Este mazo usa la versión {n}, que este reproductor no puede abrir.',
   },
   common: {
     failedToLoad: 'Error al cargar',

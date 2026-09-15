@@ -3,6 +3,7 @@ import type { Messages } from '@/i18n/types'
 export const en: Messages = {
   nav: {
     blog: 'BLOG',
+    slides: 'SLIDES',
     github: 'GITHUB',
     community: 'COMMUNITY',
     console: 'Console',
@@ -10,6 +11,7 @@ export const en: Messages = {
   },
   sidebar: {
     pagesBlog: '/ pages/blog',
+    slides: '/ slides',
     loading: 'loading…',
     language: '/ language',
   },
@@ -40,6 +42,7 @@ export const en: Messages = {
     unknownAuthor: 'Unknown',
     missingTipBefore: 'Tip: most posts live under a',
     missingTipAfter: 'path, e.g.',
+    playSlides: 'Play slides',
   },
   metadata: {
     label: '/ Metadata',
@@ -102,6 +105,20 @@ export const en: Messages = {
   },
   article: {
     figure: '[ FIG. {n} ]',
+  },
+  slides: {
+    related: '/ Slides',
+    loading: 'loading decks…',
+    empty: 'No packed presentations. Add slide tags to a README, then run `zig build pack`.',
+    pagination: 'Slide list pagination',
+    missingLabel: '/ Missing deck',
+    missingTitle: 'This presentation isn’t here',
+    back: 'Back to slides',
+    record: 'Record video',
+    recording: 'Recording…',
+    recordFailed: 'Recording failed. Try Chrome or Firefox — this browser may not capture canvas video.',
+    outline: 'Outline',
+    unsupportedVersion: 'This deck uses version {n}, which this player cannot open.',
   },
   common: {
     failedToLoad: 'Failed to load',

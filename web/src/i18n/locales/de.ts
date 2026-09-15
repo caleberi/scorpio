@@ -3,6 +3,7 @@ import type { Messages } from '@/i18n/types'
 export const de: Messages = {
   nav: {
     blog: 'BLOG',
+    slides: 'FOLIEN',
     github: 'GITHUB',
     community: 'COMMUNITY',
     console: 'Konsole',
@@ -10,6 +11,7 @@ export const de: Messages = {
   },
   sidebar: {
     pagesBlog: '/ pages/blog',
+    slides: '/ folien',
     loading: 'laden…',
     language: '/ sprache',
   },
@@ -40,6 +42,7 @@ export const de: Messages = {
     unknownAuthor: 'Unbekannt',
     missingTipBefore: 'Tipp: Die meisten Artikel liegen unter einem',
     missingTipAfter: 'Pfad, z. B.',
+    playSlides: 'Folien abspielen',
   },
   metadata: {
     label: '/ Metadaten',
@@ -102,6 +105,20 @@ export const de: Messages = {
   },
   article: {
     figure: '[ FIG. {n} ]',
+  },
+  slides: {
+    related: '/ Folien',
+    loading: 'Folien werden geladen…',
+    empty: 'Keine gepackten Präsentationen. Füge `<slide>`-Tags zu einem README hinzu und führe `zig build pack` aus.',
+    pagination: 'Folienliste Pagination',
+    missingLabel: '/ Fehlende Folien',
+    missingTitle: 'Diese Präsentation ist nicht hier',
+    back: 'Zurück zu den Folien',
+    record: 'Video aufnehmen',
+    recording: 'Aufnahme…',
+    recordFailed: 'Aufnahme fehlgeschlagen. Chrome oder Firefox können Canvas-Video meist aufnehmen.',
+    outline: 'Gliederung',
+    unsupportedVersion: 'Dieses Deck verwendet Version {n}, die dieser Player nicht öffnen kann.',
   },
   common: {
     failedToLoad: 'Laden fehlgeschlagen',

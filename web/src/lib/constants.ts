@@ -27,7 +27,10 @@ export const NS_TO_MS = 1e6
 
 export const BLOG_PREFIX = 'blog/'
 export const POSTS_PREFIX = '/posts/'
+export const PRESENTATIONS_PREFIX = '/presentations/'
 export const API_BLOG = '/blog'
+export const API_PRESENTATION = '/presentation'
+export const API_MEDIA = '/media'
 export const JSON_HEADERS = { 'Content-Type': 'application/json' } as const
 
 export const SHARE_NETWORKS = ['x', 'linkedin'] as const
@@ -35,6 +38,7 @@ export type ShareNetwork = (typeof SHARE_NETWORKS)[number]
 
 export const KEYBOARD_SHORTCUTS = {
   blog: 'b',
+  slides: 's',
   console: 'c',
 } as const
 

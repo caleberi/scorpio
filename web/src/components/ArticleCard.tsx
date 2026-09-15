@@ -32,6 +32,7 @@ export function ArticleCard({
   tags,
   figure,
   cover,
+  to = '/posts/$',
 }: {
   slug: string
   title: string
@@ -39,12 +40,13 @@ export function ArticleCard({
   tags: string[]
   figure: number
   cover?: CoverMedia
+  to?: '/posts/$' | '/presentations/$'
 }) {
   const { t } = useApp()
 
   return (
     <Link
-      to="/posts/$"
+      to={to}
       params={{ _splat: slug }}
       className="group grid items-start gap-4 sm:grid-cols-[160px_1fr]"
     >

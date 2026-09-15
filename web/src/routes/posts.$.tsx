@@ -8,7 +8,7 @@ import { PostMetadata } from '@/components/PostMetadata'
 import { PostTitle } from '@/components/PostTitle'
 import { Sidebar } from '@/components/Sidebar'
 import { Button } from '@/components/ui/button'
-import { getDocument } from '@/lib/api'
+import { getDocument, slugCandidates } from '@/lib/api'
 import { BLOG_PREFIX } from '@/lib/constants'
 import { useApp } from '@/lib/app-context'
 import { useReadingLayout } from '@/hooks/useReadingLayout'
@@ -64,7 +64,7 @@ function PostError({ error }: { error: Error }) {
 }
 
 function BlogPost() {
-  const { t } = useApp()
+  const { t, presentations } = useApp()
   const doc = Route.useLoaderData()
   const [showMarkdown, setShowMarkdown] = useState(false)
   const titleRef = useRef<HTMLElement>(null)
@@ -85,6 +85,10 @@ function BlogPost() {
     parsed.data.topics?.map((topic) => topic.toUpperCase()) ??
     categoriesFromPath(doc.path)
   const cover = coverMedia(parsed.data.image)
+  const slidesSlug = useMemo(() => {
+    const candidates = new Set(slugCandidates(doc.slug))
+    return presentations.find((deck) => candidates.has(deck.slug))?.slug ?? null
+  }, [doc.slug, presentations])
 
   return (
     <article className={cn('post-shell', reading && 'is-reading')}>
@@ -126,9 +130,20 @@ function BlogPost() {
                 <CoverMediaView media={cover} eager />
               </div>
             ) : null}
+            {slidesSlug ? (
+              <div className={cn(!cover && !reading && 'mt-6', 'mb-4')}>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/presentations/$" params={{ _splat: slidesSlug }}>
+                    {t.post.playSlides}
+                  </Link>
+                </Button>
+              </div>
+            ) : null}
             <MarkdownBody
               content={body}
-              className={cover || reading ? undefined : 'mt-6'}
+              className={
+                cover || reading || slidesSlug ? undefined : 'mt-6'
+              }
             />
           </>
         )}
