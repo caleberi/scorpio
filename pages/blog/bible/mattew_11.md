@@ -1,5 +1,5 @@
 ---
-title: "Chirst As My Spotter"
+title: "Christ As My Spotter"
 summary: "Matthew 11:28-30 is a chapter in the Book of Matthew that teaches about the importance of Christ as my spotter."
 authors:
   - 'Adewole Caleb'
