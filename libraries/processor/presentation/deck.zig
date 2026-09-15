@@ -106,6 +106,8 @@ pub const Deck = struct {
     fps: u32 = 30,
     size: Size = .{},
     soundtrack: ?Soundtrack = null,
+    /// Frontmatter cover: a URL, markdown `![alt](url)`, or an HTML `<video>`.
+    image: []const u8 = "",
     slides: []Slide = &.{},
 };
 
@@ -115,6 +117,7 @@ pub const IndexEntry = struct {
     path: []const u8,
     duration_ms: i64 = 0,
     size: Size = .{},
+    image: []const u8 = "",
     sha256: []const u8 = "",
 };
 

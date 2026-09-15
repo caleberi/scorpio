@@ -90,6 +90,7 @@ export type Deck = {
   fps: number
   size: Size
   soundtrack?: Soundtrack | null
+  image?: string
   slides: Slide[]
 }
 
@@ -99,6 +100,7 @@ export type PresentationListing = {
   path: string
   duration_ms: number
   size: Size
+  image?: string
 }
 
 export type Transform = {

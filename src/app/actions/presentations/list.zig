@@ -26,6 +26,7 @@ pub const List = struct {
             path: []const u8,
             duration_ms: i64,
             size: struct { w: u32, h: u32 },
+            image: []const u8,
         };
         var docs: std.ArrayList(Listing) = .empty;
         defer docs.deinit(exits.allocator);
@@ -36,6 +37,7 @@ pub const List = struct {
                 .path = doc.path,
                 .duration_ms = doc.duration_ms,
                 .size = .{ .w = doc.size.w, .h = doc.size.h },
+                .image = doc.image,
             });
         }
         return exits.send(.success, .{ .documents = docs.items });
