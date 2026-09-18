@@ -630,16 +630,23 @@ test SliceTest {
 }
 
 test "concat flat flatMap join" {
-    const a = [_]i32{ 1, 2 };
-    const b = [_]i32{ 3, 4 };
-    const joined = try concat(i32, testing.allocator, &a, &b);
-    defer testing.allocator.free(joined);
-    try testing.expectEqualSlices(i32, &[_]i32{ 1, 2, 3, 4 }, joined);
+    const matrix = [_][]const i32{
+        &[_]i32{ 1, 2, 5, 9 },
+        &[_]i32{ 3, 4, 9, 1 },
+        &[_]i32{ 5, 6, 7, 8 },
+    };
 
-    const nested = [_][]const i32{ &[_]i32{ 1, 2 }, &[_]i32{3}, &[_]i32{ 4, 5 } };
-    const flattened = try flat(i32, testing.allocator, &nested, 1);
+    const first_join = try concat(i32, testing.allocator, matrix[0], matrix[1]);
+    defer testing.allocator.free(first_join);
+
+    const second_join = try concat(i32, testing.allocator, first_join, matrix[2]);
+    defer testing.allocator.free(second_join);
+
+    try testing.expectEqualSlices(i32, &[_]i32{ 1, 2, 5, 9, 3, 4, 9, 1, 5, 6, 7, 8 }, second_join);
+    const flattened = try flat(i32, testing.allocator, &matrix, 1);
     defer testing.allocator.free(flattened);
-    try testing.expectEqualSlices(i32, &[_]i32{ 1, 2, 3, 4, 5 }, flattened);
+
+    try testing.expectEqualSlices(i32, &[_]i32{ 1, 2, 5, 9, 3, 4, 9, 1, 5, 6, 7, 8 }, second_join);
 
     const src = [_]i32{ 1, 2 };
     const fm = try flatMap(i32, i32, testing.allocator, &src, {}, expand);
