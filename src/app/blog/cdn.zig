@@ -1,6 +1,5 @@
 const std = @import("std");
 const libraries = @import("libraries");
-const common = @import("common");
 const DocumentEntry = libraries.processor.documents.manifest.DocumentEntry;
 const Cloudinary = libraries.uploader.cloudinary.Cloudinary;
 const ChunkEntry = libraries.processor.documents.manifest.ChunkEntry;
@@ -12,20 +11,8 @@ pub const Cdn = struct {
     pack_dir: []const u8,
 
     pub fn fetchDocument(self: *Cdn, chunks: []const ChunkEntry, doc: *const DocumentEntry) ![]u8 {
-        const ChunkIdProbe = struct {
-            candidate: u32,
-            fn matchesId(this: @This(), id: u32) bool {
-                return this.candidate == id;
-            }
-        };
-
-        const chunk = common.utils.filter(
-            ChunkEntry,
-            self.allocator,
-            chunks,
-            ChunkIdProbe{ .candidate = doc.chunk },
-            ChunkIdProbe.matchesId,
-        ) catch return error.ChunkNotFound;
+        const chunk = libraries.processor.documents.manifest.findChunk(chunks, doc.chunk) orelse
+            return error.ChunkNotFound;
 
         const bytes = try self.fetchChunk(chunk.file);
         defer self.allocator.free(bytes);

@@ -7,7 +7,7 @@ const loader = @import("../documents/loader.zig");
 const common = @import("common");
 const unixTimestamp = common.utils.unixTimestamp;
 
-const Directory = loader.Directory;
+const Tree = loader.Tree;
 const Sha256 = zstd.crypto.hash.sha2.Sha256;
 
 /// Project name, sourced from `build.zig.zon` via the `build_info` module. Used
@@ -184,8 +184,8 @@ pub const Processor = struct {
     pub fn run(self: *Processor) !void {
         try self.loadLinkage();
 
-        var dir = try Directory.load(self.allocator, self.config.input_dir);
-        defer dir.deinit();
+        var tree = try Tree.load(self.allocator, self.config.input_dir);
+        defer tree.deinit();
 
         const cwd = try fs.realpathAlloc(self.allocator, ".");
         defer self.allocator.free(cwd);
@@ -193,7 +193,7 @@ pub const Processor = struct {
         const asset_base = if (self.config.asset_root) |root|
             fs.realpathAlloc(self.allocator, root) catch try fs.path.resolve(self.allocator, &.{ cwd, root })
         else
-            try self.allocator.dupe(u8, dir.root_path);
+            try self.allocator.dupe(u8, tree.root_path);
         defer self.allocator.free(asset_base);
 
         var referenced = zstd.StringHashMap(void).init(self.allocator);
@@ -205,11 +205,16 @@ pub const Processor = struct {
         var docs: zstd.ArrayList(ScannedDoc) = .empty;
         defer docs.deinit(self.allocator);
 
-        for (dir.files) |file| {
-            const rel = relativePath(dir.root_path, file.path) orelse continue;
-            if (!matchesAny(file.path, &doc_extensions)) continue;
+        var abs_buf: [zstd.fs.max_path_bytes]u8 = undefined;
+        var rel_buf: [zstd.fs.max_path_bytes]u8 = undefined;
+
+        for (tree.files) |id| {
+            const rel = try tree.relativePathInto(id, &rel_buf);
+            if (rel.len == 0) continue;
+            const abs = try tree.pathInto(id, &abs_buf);
+            if (!matchesAny(abs, &doc_extensions)) continue;
             if (isHidden(rel)) continue;
-            try self.scanFile(cwd, asset_base, file.path, rel, &unique, &referenced, &docs);
+            try self.scanFile(cwd, asset_base, abs, rel, &unique, &referenced, &docs);
         }
 
         try self.uploadUnique(&unique);
@@ -832,12 +837,6 @@ fn parseResourceType(name: []const u8) cloudinary.ResourceType {
 fn stripExtension(path: []const u8) []const u8 {
     const ext = fs.path.extension(path);
     return path[0 .. path.len - ext.len];
-}
-
-fn relativePath(root: []const u8, abs_path: []const u8) ?[]const u8 {
-    if (!zstd.mem.startsWith(u8, abs_path, root)) return null;
-    if (abs_path.len <= root.len + 1) return null;
-    return abs_path[root.len + 1 ..];
 }
 
 fn isHidden(rel_path: []const u8) bool {

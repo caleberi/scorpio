@@ -27,15 +27,8 @@ pub const State = struct {
         const n: usize = @intCast(@max(0, self.config.blog.prefetch_neighbors));
         if (n == 0) return try allocator.alloc([]const u8, 0);
 
+        const idx = self.manifest.getIndex(slug) orelse return error.NotFound;
         const docs = self.manifest.data.documents;
-        var index: ?usize = null;
-        for (docs, 0..) |doc, i| {
-            if (zstd.mem.eql(u8, doc.slug, slug)) {
-                index = i;
-                break;
-            }
-        }
-        const idx = index orelse return error.NotFound;
 
         var list: zstd.ArrayList([]const u8) = .empty;
         errdefer list.deinit(allocator);

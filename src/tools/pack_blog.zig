@@ -9,7 +9,7 @@ const deck_mod = libraries.processor.presentation.deck;
 
 const Cloudinary = libraries.uploader.cloudinary.Cloudinary;
 const upload_pool = libraries.uploader.pool;
-const Directory = libraries.processor.documents.loader.Directory;
+const Tree = libraries.processor.documents.loader.Tree;
 const Packer = libraries.processor.documents.packer.Packer;
 const Manifest = libraries.processor.documents.manifest.Manifest;
 
@@ -152,7 +152,7 @@ pub fn main(init: std.process.Init) !void {
         try pres.run();
     }
 
-    var directory = try Directory.load(allocator, cfg.blog.staging_dir);
+    var directory = try Tree.load(allocator, cfg.blog.staging_dir);
     defer directory.deinit();
 
     var packer = Packer.init(allocator, .{
