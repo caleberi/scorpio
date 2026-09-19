@@ -324,4 +324,27 @@ pub fn build(b: *zstd.Build) !void {
     test_step.dependOn(&run_router_unit_tests.step);
     test_step.dependOn(&run_libraries_unit_tests.step);
     test_step.dependOn(&run_exe_unit_tests.step);
+
+    const bench_exe = b.addExecutable(.{
+        .name = "document-index-bench",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("libraries/processor/documents/bench.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+            .imports = &.{
+                .{ .name = "common", .module = libraries.common },
+                .{ .name = "libraries", .module = libraries.libraries },
+            },
+        }),
+    });
+    bench_exe.root_module.link_libc = true;
+
+    const bench_run = b.addRunArtifact(bench_exe);
+    bench_run.has_side_effects = true;
+    bench_run.setCwd(b.path("."));
+    const bench_step = b.step(
+        "bench",
+        "Compare old Directory/HashMap index against compact Tree + binary search",
+    );
+    bench_step.dependOn(&bench_run.step);
 }

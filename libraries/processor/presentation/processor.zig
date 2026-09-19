@@ -5,7 +5,7 @@ const common = @import("common");
 const parser = @import("parser.zig");
 const deck_mod = @import("deck.zig");
 
-const Directory = loader.Directory;
+const Tree = loader.Tree;
 const Sha256 = zstd.crypto.hash.sha2.Sha256;
 const unixTimestamp = common.utils.unixTimestamp;
 
@@ -69,18 +69,23 @@ pub const Processor = struct {
     }
 
     fn scanTree(self: *Processor, root: []const u8, entries: *zstd.ArrayList(deck_mod.IndexEntry)) !void {
-        var dir = Directory.load(self.allocator, root) catch |err| switch (err) {
+        var tree = Tree.load(self.allocator, root) catch |err| switch (err) {
             error.FileNotFound => return,
             else => return err,
         };
-        defer dir.deinit();
+        defer tree.deinit();
 
-        for (dir.files) |file| {
-            const rel = relativePath(dir.root_path, file.path) orelse continue;
-            if (!matchesExt(file.path, &doc_extensions)) continue;
+        var abs_buf: [zstd.fs.max_path_bytes]u8 = undefined;
+        var rel_buf: [zstd.fs.max_path_bytes]u8 = undefined;
+
+        for (tree.files) |id| {
+            const rel = try tree.relativePathInto(id, &rel_buf);
+            if (rel.len == 0) continue;
+            const abs = try tree.pathInto(id, &abs_buf);
+            if (!matchesExt(abs, &doc_extensions)) continue;
             if (isHidden(rel)) continue;
 
-            const content = fs.cwd().readFileAlloc(self.allocator, file.path, max_document_bytes) catch continue;
+            const content = fs.cwd().readFileAlloc(self.allocator, abs, max_document_bytes) catch continue;
             defer self.allocator.free(content);
 
             if (!parser.containsSlide(content)) {
@@ -177,12 +182,6 @@ fn matchesExt(path: []const u8, extensions: []const []const u8) bool {
 fn stripExtension(path: []const u8) []const u8 {
     const ext = fs.path.extension(path);
     return path[0 .. path.len - ext.len];
-}
-
-fn relativePath(root: []const u8, abs_path: []const u8) ?[]const u8 {
-    if (!zstd.mem.startsWith(u8, abs_path, root)) return null;
-    if (abs_path.len <= root.len + 1) return null;
-    return abs_path[root.len + 1 ..];
 }
 
 fn coverSrc(value: []const u8) []const u8 {

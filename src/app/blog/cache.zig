@@ -86,9 +86,7 @@ pub const BlogCache = struct {
     }
 
     fn loadDocument(self: *BlogCache, doc: *const DocumentEntry) ![]u8 {
-        const chunk = for (self.manifest.data.chunks) |c| {
-            if (c.id == doc.chunk) break c;
-        } else return error.ChunkNotFound;
+        const chunk = self.manifest.chunkById(doc.chunk) orelse return error.ChunkNotFound;
 
         const bytes = try self.getChunk(chunk.file);
         if (doc.offset + doc.length > bytes.len) return error.InvalidOffset;

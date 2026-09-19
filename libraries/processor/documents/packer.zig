@@ -5,8 +5,7 @@ const manifest = @import("manifest.zig");
 const common = @import("common");
 const unixTimestamp = common.utils.unixTimestamp;
 
-const Directory = loader.Directory;
-const File = loader.File;
+const Tree = loader.Tree;
 const Sha256 = zstd.crypto.hash.sha2.Sha256;
 
 const OversizePolicy = enum { own_chunk, split, fail };
@@ -66,7 +65,7 @@ pub const Packer = struct {
     allocator: zstd.mem.Allocator,
     config: Config,
     arena: zstd.heap.ArenaAllocator,
-    directory: *Directory,
+    tree: *Tree,
 
     out_dir: ?fs.Dir = null,
     prev: ?manifest.Manifest = null,
@@ -80,12 +79,12 @@ pub const Packer = struct {
     docs: zstd.ArrayList(manifest.DocumentEntry) = .empty,
     chunks: zstd.ArrayList(manifest.ChunkEntry) = .empty,
 
-    pub fn init(allocator: zstd.mem.Allocator, config: Config, directory: *Directory) Packer {
+    pub fn init(allocator: zstd.mem.Allocator, config: Config, tree: *Tree) Packer {
         return .{
             .allocator = allocator,
             .config = config,
             .arena = zstd.heap.ArenaAllocator.init(allocator),
-            .directory = directory,
+            .tree = tree,
         };
     }
 
@@ -136,21 +135,26 @@ pub const Packer = struct {
         var seen_slugs = zstd.StringHashMap(void).init(self.allocator);
         defer seen_slugs.deinit();
 
-        for (self.directory.files) |file| {
-            const rel_path = self.relativePath(file.path) orelse continue;
-            if (!self.matchesExtension(file.path)) continue;
+        var abs_buf: [zstd.fs.max_path_bytes]u8 = undefined;
+        var rel_buf: [zstd.fs.max_path_bytes]u8 = undefined;
+
+        for (self.tree.files) |id| {
+            const abs_path = try self.tree.pathInto(id, &abs_buf);
+            const rel_path = try self.tree.relativePathInto(id, &rel_buf);
+            if (rel_path.len == 0) continue;
+            if (!self.matchesExtension(abs_path)) continue;
             if (self.config.skip_hidden and isHidden(rel_path)) continue;
 
-            const slug = try self.deriveSlug(strings, file.path, rel_path);
+            const slug = try self.deriveSlug(strings, abs_path, rel_path);
             if (seen_slugs.contains(slug)) return error.DuplicateSlug;
             try seen_slugs.put(slug, {});
 
-            const decision = try self.decide(file, slug);
+            const decision = try self.decide(id, slug);
             try planned.append(self.allocator, .{
                 .slug = slug,
                 .rel_path = try strings.dupe(u8, rel_path),
-                .abs_path = try strings.dupe(u8, file.path),
-                .modified_at = @intCast(file.modified_at),
+                .abs_path = try strings.dupe(u8, abs_path),
+                .modified_at = self.tree.nodes[id].mtime,
                 .decision = decision,
             });
         }
@@ -168,19 +172,21 @@ pub const Packer = struct {
     }
 
     /// Decide how a single file should be packed relative to the prior manifest.
-    fn decide(self: *Packer, file: File, slug: []const u8) !Planned.Decision {
+    fn decide(self: *Packer, id: u32, slug: []const u8) !Planned.Decision {
         const prev_entry: ?*const manifest.DocumentEntry = if (self.prev) |*prev| prev.get(slug) else null;
 
-        const mtime: i64 = @intCast(file.modified_at);
+        const mtime = self.tree.nodes[id].mtime;
         if (prev_entry) |entry| {
             if (entry.modified_at == mtime) {
                 return .{ .reuse = entry.* };
             }
         }
 
+        var abs_buf: [zstd.fs.max_path_bytes]u8 = undefined;
+        const abs_path = try self.tree.pathInto(id, &abs_buf);
         const content = try fs.cwd().readFileAlloc(
             self.allocator,
-            file.path,
+            abs_path,
             max_document_bytes,
         );
         errdefer self.allocator.free(content);
@@ -401,7 +407,7 @@ pub const Packer = struct {
             .path = item.rel_path,
             .chunk = self.current_chunk,
             .offset = offset,
-            .length = length,
+            .length = @intCast(length),
             .modified_at = item.modified_at,
             .sha256 = try self.arena.allocator().dupe(u8, sha256_hex),
         });
@@ -458,6 +464,13 @@ pub const Packer = struct {
     }
 
     fn writeManifest(self: *Packer) !void {
+        const Sort = struct {
+            fn slugLessThan(_: void, a: manifest.DocumentEntry, b: manifest.DocumentEntry) bool {
+                return zstd.mem.lessThan(u8, a.slug, b.slug);
+            }
+        };
+        zstd.mem.sort(manifest.DocumentEntry, self.docs.items, {}, Sort.slugLessThan);
+
         const data = manifest.Data{
             .version = 1,
             .generated_at = unixTimestamp(),
@@ -503,13 +516,6 @@ pub const Packer = struct {
         var digest: [Sha256.digest_length]u8 = undefined;
         Sha256.hash(content, &digest, .{});
         return self.arena.allocator().dupe(u8, &zstd.fmt.bytesToHex(digest, .lower));
-    }
-
-    fn relativePath(self: *Packer, abs_path: []const u8) ?[]const u8 {
-        const root = self.directory.root_path;
-        if (!zstd.mem.startsWith(u8, abs_path, root)) return null;
-        if (abs_path.len <= root.len + 1) return null;
-        return abs_path[root.len + 1 ..];
     }
 
     fn matchesExtension(self: *Packer, path: []const u8) bool {
@@ -581,7 +587,7 @@ test "full pack writes chunks and documents read back byte-identical" {
     const out_full = try tmpJoin(allocator, &tmp, "pack");
     defer allocator.free(out_full);
 
-    var directory = try Directory.load(allocator, src_path);
+    var directory = try Tree.load(allocator, src_path);
     defer directory.deinit();
 
     var packer = Packer.init(allocator, .{ .output_dir = out_full }, &directory);
@@ -625,7 +631,7 @@ test "oversize document gets its own chunk" {
     const pack_dir = try tmpJoin(allocator, &tmp, "pack");
     defer allocator.free(pack_dir);
 
-    var directory = try Directory.load(allocator, src_path);
+    var directory = try Tree.load(allocator, src_path);
     defer directory.deinit();
 
     var packer = Packer.init(allocator, .{
@@ -646,7 +652,7 @@ test "oversize document gets its own chunk" {
         if (chunk.id == big_doc.chunk) break chunk;
     } else unreachable;
     try testing.expectEqual(@as(u64, 20), big_chunk.size);
-    try testing.expectEqual(@as(u64, 20), big_doc.length);
+    try testing.expectEqual(@as(u32, 20), big_doc.length);
 }
 
 test "incremental repack reuses unchanged and rewrites edited" {
@@ -665,7 +671,7 @@ test "incremental repack reuses unchanged and rewrites edited" {
     defer allocator.free(pack_dir);
 
     {
-        var directory = try Directory.load(allocator, src_path);
+        var directory = try Tree.load(allocator, src_path);
         defer directory.deinit();
         var packer = Packer.init(allocator, .{ .output_dir = pack_dir }, &directory);
         defer packer.deinit();
@@ -684,7 +690,7 @@ test "incremental repack reuses unchanged and rewrites edited" {
     try tmp.dir.writeFile(io, .{ .sub_path = "src/edit.md", .data = "after the edit" });
 
     {
-        var directory = try Directory.load(allocator, src_path);
+        var directory = try Tree.load(allocator, src_path);
         defer directory.deinit();
         var packer = Packer.init(allocator, .{ .output_dir = pack_dir }, &directory);
         defer packer.deinit();
@@ -729,7 +735,7 @@ test "compaction renumbers chunks and drops dead files" {
     };
 
     {
-        var directory = try Directory.load(allocator, src_path);
+        var directory = try Tree.load(allocator, src_path);
         defer directory.deinit();
         var packer = Packer.init(allocator, cfg, &directory);
         defer packer.deinit();
@@ -744,7 +750,7 @@ test "compaction renumbers chunks and drops dead files" {
     try tmp.dir.writeFile(io, .{ .sub_path = "src/a.md", .data = "zzzz" });
 
     {
-        var directory = try Directory.load(allocator, src_path);
+        var directory = try Tree.load(allocator, src_path);
         defer directory.deinit();
         var packer = Packer.init(allocator, cfg, &directory);
         defer packer.deinit();
