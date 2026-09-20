@@ -1,8 +1,8 @@
 ---
-title: 'Building a New Zig Community'
+title: 'Building A New Zig Community'
 summary: 'Exploring the growth and development of the Zig programming language community'
 authors:
-  - 'Adewole Caleb'
+  - 'Caleb Adewole'
 date: '2026-09-20'
 topics:
   - 'Community'
