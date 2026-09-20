@@ -52,3 +52,9 @@ I think that about covers it for now. I might have all I need to draft the Zig c
 
 > PS - This is not my first time trying to build a community; I failed a couple of times before but I am not giving up. I will keep trying until I succeed. I believe that with the right approach and mindset, we can build a thriving and supportive community for Zig enthusiasts in Nigeria.
 
+🔥 🔥 🔥 🔥  🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 
+Update: I have created a Discord server & WhatsApp group for the Zig community in Nigeria. You can join the servers here:
+
+-  [Discord Server](https://discord.gg/258AM7jxf).
+- [WhatsApp Group](https://chat.whatsapp.com/IAWWcGqD6nE7PvFx6VhwHi).
+🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 🔥 
