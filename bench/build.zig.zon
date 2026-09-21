@@ -1,0 +1,11 @@
+.{
+    .name = .env_bench,
+    .version = "0.0.0",
+    .fingerprint = 0xe70629c7ee19723f,
+    .minimum_zig_version = "0.15.2",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
