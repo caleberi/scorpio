@@ -1,6 +1,6 @@
 pub const actions = struct {
-    pub const hello = @import("examples/hello.zig");
     pub const auth = @import("examples/auth.zig");
+    pub const hello = @import("examples/hello.zig");
 };
 pub const action = @import("action.zig");
 pub const bind = @import("bind.zig");
