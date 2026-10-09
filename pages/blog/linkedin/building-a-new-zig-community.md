@@ -11,7 +11,7 @@ topics:
   - 'Zig'
   - 'Programming Languages'
 type: 'Blog'
-image: '![image](../../../blobs/cover58.jpeg)'
+image: '![image](../../../blobs/cover54.jpeg)'
 ---
 
 I was approached by an acquaintance who is a Zig enthusiast yesterday and he mentioned that he was looking for a better community to grow and learn Zig because the current community is not organized and without order, which I agree with since I have just left both the Rust and Zig groups because of the indiscipline and disorderliness. So here I am writing this post to share my thoughts on how we can build a better community or at least what I think can be done to improve how a community can run and grow. This is not particularly about the Zig community but more of a template for me on community building and growth.
