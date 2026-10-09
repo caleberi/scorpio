@@ -1,5 +1,5 @@
 ---
-title: "Building zig progam with the build system"
+title: "Building Zig Programs With The Build System"
 summary: "Using a logical cross platform dependency free approach to building zig project"
 authors:
   - "Caleb Adewole"
