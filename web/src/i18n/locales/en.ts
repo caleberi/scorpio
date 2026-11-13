@@ -14,6 +14,7 @@ export const en: Messages = {
     slides: '/ slides',
     loading: 'loading…',
     language: '/ language',
+    resize: 'Resize sidebar',
   },
   index: {
     related: '/ Related Articles',

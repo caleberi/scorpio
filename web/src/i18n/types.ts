@@ -12,6 +12,7 @@ export type Messages = {
     slides: string
     loading: string
     language: string
+    resize: string
   }
   index: {
     related: string

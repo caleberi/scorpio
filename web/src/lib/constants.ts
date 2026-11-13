@@ -6,7 +6,14 @@ export const STORAGE_KEYS = {
   theme: 'scorpio.theme',
   locale: 'scorpio.locale',
   commentAuthor: 'scorpio.comment.author',
+  sidebarWidth: 'scorpio.sidebarWidth',
 } as const
+
+/** File-tree width. The post pane keeps at least SIDEBAR_CONTENT_FLOOR. */
+export const SIDEBAR_MIN = 168
+export const SIDEBAR_DEFAULT = 176
+export const SIDEBAR_MAX = 640
+export const SIDEBAR_CONTENT_FLOOR = 420
 
 export const CONSOLE_HISTORY_LIMIT = 80
 

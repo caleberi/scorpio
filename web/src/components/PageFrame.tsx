@@ -20,7 +20,7 @@ export function PageFrame({
         {sidebar ? <Sidebar kind={sidebarKind} /> : null}
         <div
           className={cn(
-            'min-w-0 flex-1 px-4 md:px-8',
+            'posts-pane min-w-0 flex-1 px-4 md:px-8',
             hero ? 'pb-8 pt-8' : 'py-8',
           )}
         >

@@ -81,22 +81,21 @@ function SlidesIndex() {
       )}
 
       {!presentationsLoading && !presentationsError && pageDocs.length > 0 && (
-        <div className="mt-8 grid gap-10 lg:grid-cols-2 lg:gap-x-10 lg:divide-x lg:divide-dashed lg:divide-ink/30">
+        <div className="post-list">
           {pageDocs.map((deck, i) => (
-            <div key={deck.slug} className={i % 2 === 1 ? 'lg:pl-10' : ''}>
-              <ArticleCard
-                slug={deck.slug}
-                title={deck.title}
-                excerpt={`${formatClock(deck.duration_ms)} · ${deck.size.w}×${deck.size.h} · ${deck.path}`}
-                tags={[]}
-                figure={(currentPage - 1) * LIST_PAGE_SIZE + i + 1}
-                cover={
-                  coverMedia(deck.image) ??
-                  (cards[i]?.slug === deck.slug ? cards[i]?.cover : undefined)
-                }
-                to="/presentations/$"
-              />
-            </div>
+            <ArticleCard
+              key={deck.slug}
+              slug={deck.slug}
+              title={deck.title}
+              excerpt={`${formatClock(deck.duration_ms)} · ${deck.size.w}×${deck.size.h} · ${deck.path}`}
+              tags={[]}
+              figure={(currentPage - 1) * LIST_PAGE_SIZE + i + 1}
+              cover={
+                coverMedia(deck.image) ??
+                (cards[i]?.slug === deck.slug ? cards[i]?.cover : undefined)
+              }
+              to="/presentations/$"
+            />
           ))}
         </div>
       )}

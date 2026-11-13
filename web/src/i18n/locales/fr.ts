@@ -14,6 +14,7 @@ export const fr: Messages = {
     slides: '/ diapositives',
     loading: 'chargement…',
     language: '/ langue',
+    resize: 'Redimensionner la barre latérale',
   },
   index: {
     related: '/ Articles liés',

@@ -48,45 +48,47 @@ export function ArticleCard({
     <Link
       to={to}
       params={{ _splat: slug }}
-      className="group grid items-start gap-4 sm:grid-cols-[160px_1fr]"
+      className="article-card group"
     >
-      <div className="w-full border border-ink bg-surface sm:w-[160px]">
-        <div className="flex h-7 items-center gap-1.5 border-b border-ink/40 px-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-ink/70" />
-          <span className="h-1.5 w-1.5 rounded-full bg-ink/70" />
-          <span className="h-1.5 w-1.5 rounded-full bg-ink/70" />
-          <span className="mx-auto font-mono text-[11px] text-muted">
-            {interpolate(t.article.figure, { n: figure })}
-          </span>
+      <div className="article-card-layout">
+        <div className="article-card-figure">
+          <div className="flex h-7 items-center gap-1.5 border-b border-ink/40 px-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-ink/70" />
+            <span className="h-1.5 w-1.5 rounded-full bg-ink/70" />
+            <span className="h-1.5 w-1.5 rounded-full bg-ink/70" />
+            <span className="mx-auto font-mono text-[11px] text-muted">
+              {interpolate(t.article.figure, { n: figure })}
+            </span>
+          </div>
+          <div className="article-card-check relative overflow-hidden">
+            {cover ? (
+              <CoverMediaView
+                media={cover}
+                className="absolute inset-0 size-full object-cover"
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center">
+                <div className="h-10 w-16 border border-ink/50" />
+              </div>
+            )}
+          </div>
         </div>
-        <div className="article-card-check relative h-28 overflow-hidden">
-          {cover ? (
-            <CoverMediaView
-              media={cover}
-              className="absolute inset-0 size-full object-cover"
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center">
-              <div className="h-10 w-16 border border-ink/50" />
+
+        <div className="min-w-0">
+          <h3 className="article-card-title font-semibold tracking-tight group-hover:underline underline-offset-4">
+            {title}
+          </h3>
+          <p className="mt-2 text-base leading-relaxed text-ink/80">{excerpt}</p>
+          {tags.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {tags.map((tag, i) => (
+                <Badge key={tag} className="article-tag" style={tagStyle(tag, i)}>
+                  {tag}
+                </Badge>
+              ))}
             </div>
           )}
         </div>
-      </div>
-
-      <div className="min-w-0">
-        <h3 className="text-2xl font-semibold tracking-tight group-hover:underline underline-offset-4">
-          {title}
-        </h3>
-        <p className="mt-2 text-base leading-relaxed text-ink/80">{excerpt}</p>
-        {tags.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {tags.map((tag, i) => (
-              <Badge key={tag} className="article-tag" style={tagStyle(tag, i)}>
-                {tag}
-              </Badge>
-            ))}
-          </div>
-        )}
       </div>
     </Link>
   )

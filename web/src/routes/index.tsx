@@ -86,18 +86,17 @@ function BlogIndex() {
           )}
 
           {pageReady && !documentsLoading && !documentsError && (
-            <div className="mt-8 grid gap-10 lg:grid-cols-2 lg:gap-x-10 lg:divide-x lg:divide-dashed lg:divide-ink/30">
+            <div className="post-list">
               {cards.map((card, i) => (
-                <div key={card.slug} className={i % 2 === 1 ? 'lg:pl-10' : ''}>
-                  <ArticleCard
-                    slug={card.slug}
-                    title={card.title}
-                    excerpt={card.excerpt}
-                    tags={card.tags}
-                    figure={(currentPage - 1) * LIST_PAGE_SIZE + i + 1}
-                    cover={card.cover}
-                  />
-                </div>
+                <ArticleCard
+                  key={card.slug}
+                  slug={card.slug}
+                  title={card.title}
+                  excerpt={card.excerpt}
+                  tags={card.tags}
+                  figure={(currentPage - 1) * LIST_PAGE_SIZE + i + 1}
+                  cover={card.cover}
+                />
               ))}
             </div>
           )}

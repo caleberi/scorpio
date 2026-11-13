@@ -14,6 +14,7 @@ export const es: Messages = {
     slides: '/ diapositivas',
     loading: 'cargando…',
     language: '/ idioma',
+    resize: 'Cambiar ancho de la barra',
   },
   index: {
     related: '/ Artículos relacionados',

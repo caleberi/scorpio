@@ -14,6 +14,7 @@ export const de: Messages = {
     slides: '/ folien',
     loading: 'laden…',
     language: '/ sprache',
+    resize: 'Seitenleiste in der Breite ändern',
   },
   index: {
     related: '/ Ähnliche Artikel',

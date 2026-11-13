@@ -14,6 +14,7 @@ export const ja: Messages = {
     slides: '/ スライド',
     loading: '読み込み中…',
     language: '/ 言語',
+    resize: 'サイドバーの幅を変更',
   },
   index: {
     related: '/ 関連記事',
