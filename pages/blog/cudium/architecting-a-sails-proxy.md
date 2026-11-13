@@ -2,7 +2,7 @@
 title: 'Stop writing the same controller again and again: a declarative proxy layer in Sails JS'
 summary: 'Build a config-driven proxy for a dashboard API in Sails JS: one catch-all controller, a route table, permission expressions, machine input validation and a hardened upstream client.'
 authors:
-  - 'Your Name'
+  - 'Adewole Caleb'
 date: '2026-11-13'
 topics:
   - 'Engineering'
