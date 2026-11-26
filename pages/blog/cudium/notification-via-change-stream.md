@@ -284,7 +284,7 @@ async function startBullmqWorker({ consumer, queueKey, env, connection, role }) 
     }).catch(() => null);
     logger.info('lifecycle.completed', { jobId: job.id });
   });
-  
+
   worker.on('failed', (job, err) => {
     logger.error('lifecycle.failed', { jobId: job && job.id, err: err && err.message });
   });
@@ -332,3 +332,18 @@ async function startCronScheduler({ consumer, namespace, connection, logger, que
 
 module.exports = { startBullmqWorker };
 ```
+
+There is one important line that does a subtle but important work for ensuring that we get notification when it happens. And that is this line: `await watchSources(logger).catch(() => null);`. It is responsible for setting up and updating a watchlist for enabled notification rules that will needed to send notification event to subscribed dashboard users.
+
+Quick look at how it works will be good right? But before we need to highlight some rather important that can will make our life easier.
+Monitoring database change be done in two ways.
+
+1. Using change stream
+2. Using triggers
+
+Change stream is a feature that allows us to monitor database changes in real time. It is a feature that is available in mongodb and it is a good way to know when something happens in the database.
+
+Triggers are also feature that allows us to monitor database changes in real time but we have to create them on mongodb atlas service  which is a bit more complex and not as flexible as change stream when intergrating with application. 
+
+> Trigger works well for isolated usecase while change stream works well for application to database related interaction.
+
