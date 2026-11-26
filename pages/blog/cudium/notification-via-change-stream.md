@@ -119,6 +119,216 @@ The above schema is a simple one that can be used to notify the users about the 
 
 With this schema, all we need to do is to support **GET**, **POST**, **PUT**, **DELETE** operations for the notification rules. It is also important to ensure that pagination is supported when fetching the notification rules.
 
+
+### Subscription is how users opt in to receive notifications
+
 One important thing to note is that notification rules are not the same as notification subscriptions. Notification rules are the rules that are used to determine when a notification should be sent. Notification subscriptions are the subscriptions that are used to determine which notifications should be sent to which users.
 
+Schema representation of notification subscription we look like this:
 
+```json
+{
+  "_id":  "6afe96a16164ec60502922b5",
+  "rule": "6afe96a16164ec60502922b5",
+  "user": "6aeba6d060aba9b84be9cfcf",
+  "enabled": true,
+  "createdAt": "2026-11-19T06:26:41.584Z",
+  "updatedAt": "2026-11-19T06:47:30.563Z"
+}
+```
+Essentially, a subscription is a relationship between a user and a notification rule. It is used to determine which notifications should be sent to which users.
+
+### How do we know when a notification should be sent?
+
+To know when a notification will be sent we need to register enabled notification for monitoring against the database. For that we need to setup background worker system that registers consumers that tracks various intention for notification. To do this, it will be lovely to pick well tested and reliable library that can help us with this. Bull MQ is a good choice for this.
+
+Let's setup a quick representative version of how it will look like
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const { createNodeRedisClient } = require('bullmq');
+const { createClient } = require('redis');
+const Sails = require('sails').constructor;
+const { startBullmqWorker } = require('./transports/bullmq');
+const { watchSources } = require('./change-streams/watch-sources');
+const { createWorkerLogger } = require('./logger');
+
+function isFunction(func) {
+  return typeof func === 'function';
+}
+
+function loadConsumers() {
+  const dir = path.join(__dirname, 'consumers');
+  return fs.readdirSync(dir)
+    .filter((file) => /^.+-consumer\.js$/.test(file))
+    .map((file) => require(path.join(dir, file)))
+    .filter((mod) => mod && isFunction(mod.workerFunction));
+}
+
+function resolveRoles(consumer) {
+  const launch = sails.config.custom.constants.workerLaunchAs;
+  const raw = isFunction(consumer.getLaunchAs) ? consumer.getLaunchAs() : consumer.launchAs;
+  const repeat = isFunction(consumer.getRepeat) ? consumer.getRepeat() : consumer.repeat;
+  const hasRepeat = Boolean(repeat && (repeat.pattern || repeat.every));
+  const chosen = raw || (hasRepeat ? launch.BOTH : launch.WORKER);
+  if (chosen === launch.BOTH) {
+    return [launch.WORKER, launch.CRON];
+  }
+  return [chosen];
+}
+
+const sailsApp = new Sails();
+
+sailsApp.load({
+  log: { level: 'warn' },
+  models: { migrate: 'safe' },
+  hooks: { sockets: false, pubsub: false, grunt: false }
+}, async (err) => {
+  if (err) {
+    console.error('Error loading Sails app:', err);
+    process.exit(1);
+  }
+  const logger = createWorkerLogger('notifications', 'workers');
+  const url = sails.config.custom.queueRedis && sails.config.custom.queueRedis.url;
+  if (!url) {
+    logger.error('worker.noRedis');
+    process.exit(1);
+  }
+  const redisClient = createClient({ url: url });
+  redisClient.on('error', () => null);
+  const opened = await redisClient.connect().catch(() => null);
+  if (!opened) {
+    logger.error('worker.redisFailed');
+    process.exit(1);
+  }
+  const connection = createNodeRedisClient(redisClient);
+  const env = sails.config.environment || 'development';
+  const running = [];
+  const consumers = loadConsumers().filter((consumer) => consumer.enabled !== false);
+  for (let index = 0; index < consumers.length; index++) {
+    const consumer = consumers[index];
+    const queueKey = isFunction(consumer.getQueueKey) ? consumer.getQueueKey() : consumer.queueKey;
+    const roles = resolveRoles(consumer);
+    for (let roleIndex = 0; roleIndex < roles.length; roleIndex++) {
+      const started = await startBullmqWorker({
+        consumer: consumer,
+        queueKey: queueKey,
+        env: env,
+        connection: connection,
+        role: roles[roleIndex]
+      });
+      if (started) {
+        running.push(started);
+      }
+    }
+  }
+  const watcher = await watchSources(logger).catch(() => null);
+
+  const shutdown = async () => {
+    if (watcher && watcher.stop) {
+      await watcher.stop().catch(() => null);
+    }
+    await Promise.all(running.map((entry) => entry.stop())).catch(() => null);
+    await redisClient.quit().catch(() => null);
+    process.exit(0);
+  };
+  process.on('SIGINT', () => { shutdown(); });
+  process.on('SIGTERM', () => { shutdown(); });
+  logger.info('worker.ready', { count: running.length });
+});
+```
+
+This code sample above just loads up consumer as background worker system. There are always specific to what they ought to do.
+
+Obviously, the workers need to consume messages from the queue and process them. And we don't have one setup yet so let's create a queue.
+
+```javascript
+const { Worker, Queue } = require('bullmq');
+const { createWorkerLogger } = require('../logger');
+
+function isFunction(func) {
+  return typeof func === 'function';
+}
+
+function getConsumerRepeat(consumer) {
+  return isFunction(consumer.getRepeat) ? consumer.getRepeat() : consumer.repeat;
+}
+
+async function startBullmqWorker({ consumer, queueKey, env, connection, role }) {
+  const transports = sails.config.custom.constants.workerTransports;
+  const launch = sails.config.custom.constants.workerLaunchAs;
+  const namespace = env + '-' + queueKey;
+  const instanceName = consumer.name + ':' + role;
+  const logger = createWorkerLogger(instanceName, namespace);
+
+  if (role === launch.CRON) {
+    return startCronScheduler({ consumer, namespace, connection, logger, queueKey, instanceName });
+  }
+  if (role !== launch.WORKER) {
+    logger.error('worker.skipped', { reason: 'unknown-role', role: role });
+    return null;
+  }
+
+  const worker = new Worker(namespace, (job) => {
+    return consumer.workerFunction({ job: job, namespace: namespace, logger: logger });
+  }, Object.assign({ connection: connection }, consumer.options || {}));
+
+  worker.on('completed', (job) => {
+    const waitMs = Number(job.processedOn) - Number(job.timestamp);
+    const runMs = Number(job.finishedOn) - Number(job.processedOn);
+    sails.helpers.notifications.recordJobSample.with({
+      jobName: job.name,
+      waitMs: waitMs,
+      runMs: runMs
+    }).catch(() => null);
+    logger.info('lifecycle.completed', { jobId: job.id });
+  });
+  
+  worker.on('failed', (job, err) => {
+    logger.error('lifecycle.failed', { jobId: job && job.id, err: err && err.message });
+  });
+  worker.on('error', (err) => {
+    logger.error('lifecycle.error', { err: err && err.message });
+  });
+
+  logger.info('worker.start', { transport: transports.BULLMQ, role: launch.WORKER, queueKey: queueKey });
+  return {
+    name: instanceName,
+    stop: async () => {
+      await worker.close();
+    }
+  };
+}
+
+async function startCronScheduler({ consumer, namespace, connection, logger, queueKey, instanceName }) {
+  const repeat = getConsumerRepeat(consumer);
+  if (!repeat || !(repeat.pattern || repeat.every)) {
+    logger.warn('scheduler.skipped', { reason: 'missing-repeat' });
+    return null;
+  }
+  const queue = new Queue(namespace, { connection: connection });
+  const scheduler = {};
+  if (repeat.pattern) {
+    scheduler.pattern = repeat.pattern;
+  }
+  if (repeat.every) {
+    scheduler.every = repeat.every;
+  }
+  await queue.upsertJobScheduler(consumer.name, scheduler, {
+    name: consumer.jobName || consumer.name,
+    data: consumer.jobData || {}
+  }).catch((err) => {
+    logger.error('scheduler.failed', { err: err.message });
+  });
+  logger.info('scheduler.start', { queueKey: queueKey, every: scheduler.every, pattern: scheduler.pattern });
+  return {
+    name: instanceName,
+    stop: async () => {
+      await queue.close();
+    }
+  };
+}
+
+module.exports = { startBullmqWorker };
+```
