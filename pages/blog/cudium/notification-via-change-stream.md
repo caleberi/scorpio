@@ -117,3 +117,8 @@ The above schema is a simple one that can be used to notify the users about the 
 
 > In my opinion, the important part of this schema is ignoring noise and focusing on simplicity about what is needed  at the moment and this schema answers it.
 
+With this schema, all we need to do is to support **GET**, **POST**, **PUT**, **DELETE** operations for the notification rules. It is also important to ensure that pagination is supported when fetching the notification rules.
+
+One important thing to note is that notification rules are not the same as notification subscriptions. Notification rules are the rules that are used to determine when a notification should be sent. Notification subscriptions are the subscriptions that are used to determine which notifications should be sent to which users.
+
+
