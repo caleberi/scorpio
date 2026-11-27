@@ -9,6 +9,7 @@ vendor/zap/
 *.dat
 manifest*.json
 *.json
+!benchmarks/**/*.json
 staging/
 .DS_Store
 pages/.obsidian/*
