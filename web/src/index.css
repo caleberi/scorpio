@@ -379,7 +379,6 @@
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--color-line) 40%, transparent);
   background: var(--color-surface);
-  view-transition-name: post-cover;
 }
 
 .post-cover .cover-media,
@@ -429,7 +428,6 @@ video.cover-media {
 .post-shell-title {
   grid-area: title;
   overflow-anchor: none;
-  view-transition-name: post-title;
 }
 
 .post-shell-tree {
@@ -442,7 +440,6 @@ video.cover-media {
   min-width: 0;
   padding: 2rem 1rem 2.5rem;
   overflow-anchor: none;
-  view-transition-name: post-meta;
 }
 
 .post-shell-body {
@@ -472,22 +469,6 @@ video.cover-media {
     grid-template-areas:
       "title title title"
       "tree meta body";
-  }
-
-  html[data-post-rail='stack'] .post-shell:not(.is-reading) {
-    grid-template-columns: var(--sidebar-width, 11rem) minmax(0, 1fr);
-    grid-template-areas:
-      "title title"
-      "tree meta"
-      "tree body";
-  }
-
-  html[data-post-rail='stack'] .post-shell:not(.is-reading) .post-shell-meta {
-    padding: 2rem 2rem 0.5rem;
-  }
-
-  html[data-post-rail='stack'] .post-shell:not(.is-reading) .post-shell-body {
-    padding: 0.5rem 2rem 2.5rem;
   }
 
   .post-shell-meta {
@@ -550,6 +531,18 @@ video.cover-media {
   .post-shell.is-reading .post-cover {
     margin-top: 0;
   }
+}
+
+html[data-vt='on'] .post-cover {
+  view-transition-name: post-cover;
+}
+
+html[data-vt='on'] .post-shell-title {
+  view-transition-name: post-title;
+}
+
+html[data-vt='on'] .post-shell-meta {
+  view-transition-name: post-meta;
 }
 
 ::view-transition-old(root),
@@ -1175,9 +1168,9 @@ html[data-theme-mode="dark"] .lang-icon-field {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .post-cover,
-  .post-shell-title,
-  .post-shell-meta {
+  html[data-vt='on'] .post-cover,
+  html[data-vt='on'] .post-shell-title,
+  html[data-vt='on'] .post-shell-meta {
     view-transition-name: none;
   }
 

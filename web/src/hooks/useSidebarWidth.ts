@@ -9,8 +9,6 @@ import {
 } from '@/lib/constants'
 
 const PAGE_MAX = 1400
-/** Remaining page width where the post meta column drops above the body. */
-const RAIL_STACK_AT = 980
 
 function pageWidth(viewport = window.innerWidth) {
   return Math.min(viewport, PAGE_MAX)
@@ -42,7 +40,6 @@ function publish(preferred: number, handle: HTMLDivElement | null) {
   const width = clampSidebarWidth(preferred)
   const root = document.documentElement
   root.style.setProperty('--sidebar-width', `${width}px`)
-  root.dataset.postRail = pageWidth() - width < RAIL_STACK_AT ? 'stack' : 'beside'
   if (handle) {
     handle.setAttribute('aria-valuenow', String(width))
     handle.setAttribute('aria-valuemin', String(SIDEBAR_MIN))

@@ -35,4 +35,10 @@ Given the fact that data consumption is a critical and foundational part of the 
 
 2. **Change Stream**: The system can monitor the database for changes using change streams. When a change occurs, the system captures the event and processes it accordingly.
 
-For this article, look at both approaches.
+For this article, look at both approaches based on this questions:
+
+- What happens if our application has some issue with contacting the database or can we send notification still to the dashboard similarly to how platforms like mixpanel does it?
+
+- Can outboxing changes to webhook endpoint still be considered as a valid approach?
+
+

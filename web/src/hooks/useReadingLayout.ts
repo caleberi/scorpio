@@ -19,13 +19,25 @@ function startViewTransition(update: () => void): ViewTransition | null {
     return null
   }
 
-  return doc.startViewTransition(update)
+  // Names exist only while a scroll transition runs. Leaving them on makes
+  // the cover snapshot and snap on every viewport resize.
+  document.documentElement.dataset.vt = 'on'
+  try {
+    const vt = doc.startViewTransition(update)
+    void vt.finished.finally(() => {
+      delete document.documentElement.dataset.vt
+    })
+    return vt
+  } catch (err) {
+    delete document.documentElement.dataset.vt
+    throw err
+  }
 }
 
 /**
  * Keep the full-width title until the user has scrolled into the article.
  * Hysteresis avoids flipping back when the title docks into the sticky rail.
- * View Transitions morph the cover/title so the grid change does not snap.
+ * Scroll morphs the cover and title. Viewport resizes do not.
  */
 export function useReadingLayout(titleRef: RefObject<HTMLElement | null>) {
   const [reading, setReading] = useState(false)
@@ -58,7 +70,13 @@ export function useReadingLayout(titleRef: RefObject<HTMLElement | null>) {
       })
     }
 
+    let viewportW = window.innerWidth
+    let viewportH = window.innerHeight
+    let resizing = false
+    let resizeTimer = 0
+
     const onScroll = () => {
+      if (resizing) return
       const titleH = titleRef.current?.offsetHeight ?? 280
       const enterAt = Math.max(titleH * 0.45, 160)
       const y = window.scrollY
@@ -67,9 +85,27 @@ export function useReadingLayout(titleRef: RefObject<HTMLElement | null>) {
       else if (was && y < 32) apply(false)
     }
 
+    const onResize = () => {
+      const nextW = window.innerWidth
+      const nextH = window.innerHeight
+      if (nextW === viewportW && nextH === viewportH) return
+      viewportW = nextW
+      viewportH = nextH
+      resizing = true
+      window.clearTimeout(resizeTimer)
+      resizeTimer = window.setTimeout(() => {
+        resizing = false
+      }, 180)
+    }
+
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.clearTimeout(resizeTimer)
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onResize)
+    }
   }, [titleRef])
 
   return reading
